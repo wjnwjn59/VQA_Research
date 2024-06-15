@@ -3,3 +3,7 @@ __MACOSX
 __pycache__
 
 /dataset
+.env
+
+models/VnCoreNLP/models
+models/VnCoreNLP/*.jar
