@@ -1,0 +1,12 @@
+evaluate==0.4.2
+huggingface_hub==0.23.3
+matplotlib==3.9.0
+numpy==1.26.4
+pandas==2.2.2
+peft==0.11.1
+Pillow==10.3.0
+py_vncorenlp==0.1.4
+Requests==2.32.3
+torch==2.3.1
+torchvision==0.18.1
+transformers==4.41.2
