@@ -8,6 +8,19 @@
 sudo apt-get install git-lfs
 ```
 
+### Python
+
+```bash
+pip install -r requirements.txt
+```
+
+## Download datasets
+
+```bash
+cd dataset
+python download.py
+```
+
 ## Description
 
 This repo contains the survey, source and re-implementation code of several methods related to the Visual Question Answering task.
