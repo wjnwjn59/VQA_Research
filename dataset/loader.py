@@ -13,7 +13,7 @@ class ViVQADataset(Dataset):
                  img_trasnsform = None,
                  image_processor = None,
                  text_processor = None,
-                 max_length = 1024
+                 max_length = 256
                 ) -> None:
         self.data_dir = data_dir    
         self.split = split
@@ -48,6 +48,7 @@ class ViVQADataset(Dataset):
             question,
             max_length = self.max_length, 
             truncation=True, 
+            padding="max_length",
             return_tensors="pt"
         )
 
