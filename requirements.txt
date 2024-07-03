@@ -11,3 +11,6 @@ py_vncorenlp==0.1.4
 Requests==2.32.3
 torch==2.3.1
 torchvision==0.18.1
+sentencepiece==0.2.0
+wandb==0.17.2
+timm==1.0.7
