@@ -27,28 +27,24 @@ This repo contains the survey, source and re-implementation code of several meth
 
 ## To-do list
 
-- [] Skeleton source
+- [x] Skeleton source
 - [] Benchmarks
 
 ### General Methods
 
-- [] CNN+LSTM Classifier
-- [] CNN+LSTM+Attention Classifier
-- [] Transformers Encoder-Decoder
-- [] CNN+BERT Classifier
-- [] ViT+LSTM Classifier
-- [] BERT+ViT Classifier
+- [x] CNN+LSTM Classifier
+- [x] CNN+LSTM+Attention Classifier
+- [x] Transformers Encoder-Decoder
+- [x] CNN+BERT Classifier
+- [x] ViT+LSTM Classifier
+- [x] BERT+ViT Classifier
 - [x] BLIP Finetuning
-- [] CLIP Finetuning
-- [] PaLI Finetuning
 
 ### ViVQA Methods
 
 - [x] PhoBERT+ViT Classifier
 - [x] BARTPpho+ViT Classifier
 - [x] BARTpho+BEiT Classifier
-- [] BARTpho+BEiTv2/3 Classifier
-- [] //+Co-attention 
 
 ## Benchmarks
 
