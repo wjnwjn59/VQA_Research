@@ -16,3 +16,4 @@ wandb==0.17.2
 timm==1.0.7
 python-dotenv==1.0.1
 scikit-learn==1.5.1
+pynvml==11.5.3
