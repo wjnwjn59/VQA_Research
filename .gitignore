@@ -162,3 +162,9 @@ __MACOSX
 models/VnCoreNLP/models
 models/VnCoreNLP/*.jar
 
+
+*wandb
+*weights
+weights*
+kd
+barlow_twins
