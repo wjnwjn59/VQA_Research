@@ -1,4 +1,13 @@
 import os
+os.environ["CUDA_VISIBLE_DEVICES"] = '0,1'
+os.environ["WORLD_SIZE"] = '2'
+
+from dotenv import load_dotenv
+
+load_dotenv()
+
+WANDB_API_KEY = os.getenv('WANDB_API_KEY')
+
 import time
 import random
 import wandb
@@ -10,7 +19,6 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from tqdm import tqdm
-from dotenv import load_dotenv
 
 from config import pipeline_config
 from torch_dataset import ViVQADataset
@@ -18,12 +26,6 @@ from vqa_model import ViVQAModel
 from text_encoder import text_processor
 from img_encoder import img_processor
 from utils import get_label_encoder
-
-load_dotenv()
-
-WANDB_API_KEY = os.getenv('WANDB_API_KEY')
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
-os.environ["WORLD_SIZE"] = '1'
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -168,6 +170,7 @@ def train(model,
 def parse_args():
     parser = argparse.ArgumentParser(description='ViVQA Training Script')
     parser.add_argument('--seed', type=int, default=pipeline_config.seed, help='Random seed')
+    parser.add_argument('--gpus', type=str, default='0,1', help='GPU ID. Default is GPU ID 0,1.')
     parser.add_argument('--project_name', type=str, default='vivqa_paraphrase_augmentation', help='Project name for wandb')
     parser.add_argument('--exp_name', type=str, help='Experiment name for wandb')
     parser.add_argument('--data_dir', default=pipeline_config.data_dir, type=str, help='Dataset directory')
@@ -184,22 +187,27 @@ def parse_args():
     parser.add_argument('--text_encoder_id', type=str, default=pipeline_config.text_encoder_id, help='Text encoder ID')
     parser.add_argument('--img_encoder_id', type=str, default=pipeline_config.img_encoder_id, help='Image encoder ID')
     parser.add_argument('--paraphraser_id', type=str, default=pipeline_config.paraphraser_id, help='Paraphraser ID')
+    parser.add_argument('--is_text_augment', type=lambda x: (str(x).lower() == 'true'), default=pipeline_config.is_text_augment, help='Augment with text paraphrases')
     parser.add_argument('--n_text_paras', type=int, default=pipeline_config.num_paraphrase, help='Number of paraphrases')
     parser.add_argument('--text_para_thresh', type=float, default=pipeline_config.paraphrase_thresh, help='Paraphrase threshold')
-    parser.add_argument('--val_set_ratio', type=float, default=pipeline_config.val_set_ratio, help='Validation set ratio')
+    parser.add_argument('--n_para_pool', type=int, default=pipeline_config.n_para_pool, help='The number of paraphrase in the paraphrase pool')
+    parser.add_argument('--is_img_augment', type=lambda x: (str(x).lower() == 'true'), default=pipeline_config.is_img_augment, help='Augment with img geometric shift')
     parser.add_argument('--save_ckpt_dir', type=str, default='runs/train', help='Directory to save checkpoints')
-    parser.add_argument('--is_evaluate', type=bool, default=True, help='Evaluate the performance of the model on test set')
+    parser.add_argument('--is_evaluate', type=lambda x: (str(x).lower() == 'true'), default=True, help='Evaluate the performance of the model on test set')
     
     return parser.parse_args()
 
-
-def main():
+def main(): 
     args = parse_args()
 
     set_seed(args.seed)
 
+    # if args.gpus:
+    #     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
+    #     os.environ["WORLD_SIZE"] = str(len(args.gpus.split(',')))
+
     if not args.exp_name:
-        exp_name = f'phase4_vivqa_ntextpara{args.n_text_paras}_random_{args.text_para_thresh}'
+        exp_name = f'phase4_vivqa_istextaug{args.is_text_augment}_ntextpara{args.n_text_paras}_random{args.text_para_thresh}_nparapool{args.n_para_pool}'
     else:
         exp_name = args.exp_name
 
@@ -221,16 +229,17 @@ def main():
                                 text_processor=text_processor,
                                 img_processor=img_processor, 
                                 label_encoder=label2idx,
-                                is_augment=True,
+                                is_text_augment=args.is_text_augment,
                                 n_text_paras=args.n_text_paras,
-                                text_para_thresh=args.text_para_thresh)
+                                text_para_thresh=args.text_para_thresh,
+                                n_para_pool=args.n_para_pool)
 
     test_dataset = ViVQADataset(data_dir=args.data_dir,
                                 data_mode='val',
                                 text_processor=text_processor,
                                 img_processor=img_processor, 
                                 label_encoder=label2idx,
-                                is_augment=False,
+                                is_text_augment=False,
                                 n_text_paras=args.n_text_paras,
                                 text_para_thresh=args.text_para_thresh)
 
@@ -244,9 +253,14 @@ def main():
 
     model = ViVQAModel(projection_dim=args.projection_dim,
                        hidden_dim=args.hidden_dim,
-                       answer_space_len=answer_space_len).to(device)
-    # model = nn.DataParallel(model)
-    # model = model.to(device)
+                       answer_space_len=answer_space_len,
+                       is_text_augment=args.is_text_augment, 
+                       is_img_augment=args.is_img_augment)
+    
+    if len(args.gpus.split(',')) > 1:
+        model = nn.DataParallel(model,
+                                device_ids=list(map(int, args.gpus.split(','))))
+    model = model.to(device)
         
     optimizer = torch.optim.AdamW(model.parameters(),
                                 lr=args.learning_rate,
@@ -271,7 +285,9 @@ def main():
 
     best_model = ViVQAModel(projection_dim=args.projection_dim,
                             hidden_dim=args.hidden_dim,
-                            answer_space_len=answer_space_len).to(device)
+                            answer_space_len=answer_space_len,
+                            is_text_augment=False, 
+                            is_img_augment=False).to(device)
 
     best_model.load_state_dict(torch.load(save_best_path))
 
@@ -279,6 +295,12 @@ def main():
                                    val_loader=test_loader,
                                    criterion=criterion)
     test_loss, test_acc = round(test_loss, 4), round(test_acc, 4)
+
+    exp_table = wandb.Table(
+        columns=list(pipeline_config.__dict__.keys()) + ['test_loss', 'test_acc'], 
+        data=[list(pipeline_config.__dict__.values()) + [test_loss, test_acc]]
+    )
+    wandb.log({"Exp_table": exp_table})
 
     print(f'Test loss: {test_loss}\tTest acc: {test_acc}')
     
