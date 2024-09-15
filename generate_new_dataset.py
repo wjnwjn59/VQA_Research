@@ -1,15 +1,16 @@
+import os
+
+os.environ["CUDA_VISIBLE_DEVICES"] = '2'
+os.environ["WORLD_SIZE"] = '1'
+
 import pandas as pd
 import argparse
 import time
 import torch
 import random
 import numpy as np
-import os
 
 from paraphraser import get_paraphrase
-
-os.environ["CUDA_VISIBLE_DEVICES"] = '3'
-os.environ["WORLD_SIZE"] = '1'
 
 def set_seed(random_seed):
     random.seed(random_seed)
@@ -35,7 +36,7 @@ def parse_arguments():
     parser.add_argument("--train_filepath", type=str, required=True)
     parser.add_argument("--num_params", type=int, default=20, help="Number of parameters")
     parser.add_argument("--random_seed", type=int, default=59)
-    parser.add_argument("--save_filepath", type=str, default="question_paraphrases_data.csv")
+    parser.add_argument("--save_filepath", type=str, default="paraphrases_train.csv")
 
     return parser.parse_args()
 
