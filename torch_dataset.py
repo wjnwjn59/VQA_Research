@@ -1,6 +1,7 @@
+import os
+import ast
 import random
 import torch
-import os
 import pandas as pd
 
 from PIL import Image
@@ -62,16 +63,21 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
     
 class ViVQADataset(Dataset):
     def __init__(self, data_dir, data_mode, text_processor, 
-                img_processor, label_encoder=None, is_augment=True, 
-                n_text_paras=3, text_para_thresh=0.9):
+                img_processor, label_encoder=None, is_text_augment=True, 
+                n_text_paras=3, text_para_thresh=0.9, n_para_pool=20):
         self.data_dir = data_dir
         self.data_mode = data_mode
-        self.is_augment = is_augment
+        self.is_text_augment = is_text_augment
         self.n_text_paras = n_text_paras
         self.text_para_thresh = text_para_thresh
 
         if self.data_mode == 'train':
-            self.data_path = os.path.join(data_dir, 'ViVQA', 'paraphrases_train.csv')
+            train_filename = f'{n_para_pool}_paraphrases_train.csv'
+            data_path = os.path.join(data_dir, 'ViVQA', train_filename)
+            if not os.path.exists(data_path):
+                print('Data training file with number of paraphrases pool not found! Select default (20) file.')
+                data_path = os.path.join(data_dir, 'ViVQA', '20_paraphrases_train.csv')
+            self.data_path = data_path
         else:
             self.data_path = os.path.join(data_dir, 'ViVQA', 'test.csv')
         
@@ -96,7 +102,7 @@ class ViVQADataset(Dataset):
             img_id = row['img_id']
             #question_type = row['type'] # 0: object, 1: color, 2: how many, 3: where
 
-            if self.data_mode == 'train' and self.is_augment:
+            if self.data_mode == 'train' and self.is_text_augment:
                 question_paraphrases = row['question_paraphrase']
                 para_questions.append(question_paraphrases)
 
@@ -124,8 +130,9 @@ class ViVQADataset(Dataset):
         text_inputs_lst = [question_inputs]
         
         r = random.random()
-        if self.data_mode == 'train' and self.is_augment:
+        if self.data_mode == 'train' and self.is_text_augment:
             para_questions = self.para_questions[idx]
+            para_questions = ast.literal_eval(para_questions)
             selected_para_questions = random.sample(para_questions, self.n_text_paras)
             paraphrase_inputs_lst = [self.text_processor(text) for text in selected_para_questions]
 
