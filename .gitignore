@@ -166,5 +166,7 @@ models/VnCoreNLP/*.jar
 *wandb
 *weights
 weights*
+runs
+
 kd
 barlow_twins
