@@ -296,9 +296,11 @@ def main():
                                    criterion=criterion)
     test_loss, test_acc = round(test_loss, 4), round(test_acc, 4)
 
+    args_dict = vars(args)
+
     exp_table = wandb.Table(
-        columns=list(pipeline_config.__dict__.keys()) + ['test_loss', 'test_acc'], 
-        data=[list(pipeline_config.__dict__.values()) + [test_loss, test_acc]]
+        columns=list(args_dict.keys()) + ['test_loss', 'test_acc'], 
+        data=[list(args_dict.values()) + [test_loss, test_acc]]
     )
     wandb.log({"Exp_table": exp_table})
 
