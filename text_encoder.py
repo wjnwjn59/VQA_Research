@@ -5,7 +5,6 @@ import torch
 from pathlib import Path
 from transformers import AutoModel, AutoTokenizer
 from contextlib import contextmanager
-from config import pipeline_config
 
 dict_map = {
     "òa": "oà",
@@ -69,7 +68,6 @@ def temporary_directory_change(directory):
     finally:
         os.chdir(original_directory)
 
-TEXT_MODEL_ID = pipeline_config.text_encoder_id
 VNCORENLP_PATH = Path('./models/VnCoreNLP')
 ABS_VNCORENLP_PATH = VNCORENLP_PATH.resolve()
 os.makedirs(VNCORENLP_PATH, exist_ok=True)
@@ -82,22 +80,34 @@ with temporary_directory_change(ABS_VNCORENLP_PATH):
                                         save_dir=str(ABS_VNCORENLP_PATH))
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-text_encoder_tokenizer = AutoTokenizer.from_pretrained(TEXT_MODEL_ID)
-text_model = AutoModel.from_pretrained(TEXT_MODEL_ID,
-                                       device_map=device)
 
-def text_processor(text):
+def text_processor(text, text_tokenizer):
     text = text_tone_normalize(text, dict_map)
     segmented_text = rdrsegmenter.word_segment(text)
     segmented_text = ' '.join(segmented_text)
 
-    input_ids = text_encoder_tokenizer(segmented_text,
-                                       max_length=50,
-                                       padding='max_length', 
-                                       truncation=True,
-                                       return_token_type_ids=False,
-                                       return_tensors='pt').to(device)
+    input_ids = text_tokenizer(segmented_text,
+                               max_length=50,
+                               padding='max_length', 
+                               truncation=True,
+                               return_token_type_ids=False,
+                               return_tensors='pt').to(device)
     
     input_ids = {k: v.squeeze() for k, v in input_ids.items()}
 
     return input_ids
+
+def load_text_encoder(text_model_id):
+    text_tokenizer = AutoTokenizer.from_pretrained(text_model_id)
+    text_model = AutoModel.from_pretrained(text_model_id,
+                                           device_map=device)
+
+    def text_processor_with_tokenizer(text):
+        return text_processor(text, text_tokenizer)
+
+    return {
+        'model_name': text_model_id,
+        'text_processor': text_processor_with_tokenizer,
+        'features_dim': text_model.config.hidden_size,
+        'text_model': text_model
+    }
