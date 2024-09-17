@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '0,1'
+os.environ["CUDA_VISIBLE_DEVICES"] = '2,3'
 os.environ["WORLD_SIZE"] = '2'
 
 from dotenv import load_dotenv
@@ -22,9 +22,9 @@ from tqdm import tqdm
 
 from config import pipeline_config
 from torch_dataset import ViVQADataset
+from text_encoder import load_text_encoder
+from img_encoder import load_img_encoder
 from vqa_model import ViVQAModel
-from text_encoder import text_processor
-from img_encoder import img_processor
 from utils import get_label_encoder
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -188,10 +188,12 @@ def parse_args():
     parser.add_argument('--img_encoder_id', type=str, default=pipeline_config.img_encoder_id, help='Image encoder ID')
     parser.add_argument('--paraphraser_id', type=str, default=pipeline_config.paraphraser_id, help='Paraphraser ID')
     parser.add_argument('--is_text_augment', type=lambda x: (str(x).lower() == 'true'), default=pipeline_config.is_text_augment, help='Augment with text paraphrases')
-    parser.add_argument('--n_text_paras', type=int, default=pipeline_config.num_paraphrase, help='Number of paraphrases')
-    parser.add_argument('--text_para_thresh', type=float, default=pipeline_config.paraphrase_thresh, help='Paraphrase threshold')
-    parser.add_argument('--n_para_pool', type=int, default=pipeline_config.n_para_pool, help='The number of paraphrase in the paraphrase pool')
+    parser.add_argument('--n_text_paras', type=int, default=pipeline_config.n_text_paras, help='Number of paraphrases')
+    parser.add_argument('--text_para_thresh', type=float, default=pipeline_config.text_para_thresh, help='Paraphrase threshold')
+    parser.add_argument('--n_text_para_pool', type=int, default=pipeline_config.n_text_para_pool, help='The number of paraphrase in the paraphrase pool')
     parser.add_argument('--is_img_augment', type=lambda x: (str(x).lower() == 'true'), default=pipeline_config.is_img_augment, help='Augment with img geometric shift')
+    parser.add_argument('--n_img_augments', type=int, default=pipeline_config.n_text_paras, help='Number of image augments')
+    parser.add_argument('--img_augment_thresh', type=float, default=pipeline_config.img_augment_thresh, help='Image augmentation threshold')
     parser.add_argument('--save_ckpt_dir', type=str, default='runs/train', help='Directory to save checkpoints')
     parser.add_argument('--is_evaluate', type=lambda x: (str(x).lower() == 'true'), default=True, help='Evaluate the performance of the model on test set')
     
@@ -207,9 +209,22 @@ def main():
     #     os.environ["WORLD_SIZE"] = str(len(args.gpus.split(',')))
 
     if not args.exp_name:
-        exp_name = f'phase4_vivqa_istextaug{args.is_text_augment}_ntextpara{args.n_text_paras}_random{args.text_para_thresh}_nparapool{args.n_para_pool}'
+        text_augment_info = f'istextaug{args.is_text_augment}_ntextpara{args.n_text_paras}_random{args.text_para_thresh}_nparapool{args.n_text_para_pool}'
+        img_augment_info = f'isimgaug{args.is_img_augment}_nimgaug{args.n_img_augments}_random{args.img_augment_thresh}'
+        exp_name = f'phase4_vivqa_{text_augment_info}_{img_augment_info}'
     else:
         exp_name = args.exp_name
+
+    if args.text_encoder_id:
+        text_encoder_dict = load_text_encoder(args.text_encoder_id)
+    else:
+        raise Exception('No text encoder specified!')
+
+    if args.img_encoder_id:
+        img_encoder_dict = load_img_encoder(args.img_encoder_id)
+    else:
+        raise Exception('No img encoder specified!')
+    
 
     wandb.init(
         project=args.project_name,
@@ -224,36 +239,42 @@ def main():
 
     label2idx, idx2label, answer_space_len = get_label_encoder(args.data_dir)
         
+    # Enable augmentation in training set
     train_dataset = ViVQADataset(data_dir=args.data_dir,
-                                data_mode='train',
-                                text_processor=text_processor,
-                                img_processor=img_processor, 
-                                label_encoder=label2idx,
-                                is_text_augment=args.is_text_augment,
-                                n_text_paras=args.n_text_paras,
-                                text_para_thresh=args.text_para_thresh,
-                                n_para_pool=args.n_para_pool)
+                                 data_mode='train',
+                                 text_encoder_dict=text_encoder_dict,
+                                 img_encoder_dict=img_encoder_dict, 
+                                 label_encoder=label2idx,
+                                 is_text_augment=args.is_text_augment,
+                                 is_img_augment=args.is_img_augment,
+                                 n_text_paras=args.n_text_paras,
+                                 text_para_thresh=args.text_para_thresh,
+                                 n_para_pool=args.n_text_para_pool,
+                                 n_img_augments=args.n_img_augments,
+                                 img_augment_thresh=args.img_augment_thresh)
 
+    # Disable augmentation for all modalities in test set
     test_dataset = ViVQADataset(data_dir=args.data_dir,
                                 data_mode='val',
-                                text_processor=text_processor,
-                                img_processor=img_processor, 
+                                text_encoder_dict=text_encoder_dict,
+                                img_encoder_dict=img_encoder_dict, 
                                 label_encoder=label2idx,
                                 is_text_augment=False,
-                                n_text_paras=args.n_text_paras,
-                                text_para_thresh=args.text_para_thresh)
+                                is_img_augment=False)
 
     train_loader = DataLoader(train_dataset,
                               batch_size=args.train_batch_size,
                               shuffle=True)
 
     test_loader = DataLoader(test_dataset,
-                            batch_size=args.test_batch_size,
-                            shuffle=False)
+                             batch_size=args.test_batch_size,
+                             shuffle=False)
 
     model = ViVQAModel(projection_dim=args.projection_dim,
                        hidden_dim=args.hidden_dim,
                        answer_space_len=answer_space_len,
+                       text_encoder_dict=text_encoder_dict, 
+                       img_encoder_dict=img_encoder_dict,
                        is_text_augment=args.is_text_augment, 
                        is_img_augment=args.is_img_augment)
     
@@ -263,8 +284,8 @@ def main():
     model = model.to(device)
         
     optimizer = torch.optim.AdamW(model.parameters(),
-                                lr=args.learning_rate,
-                                weight_decay=args.weight_decay)
+                                  lr=args.learning_rate,
+                                  weight_decay=args.weight_decay)
     # step_size = EPOCHS * 0.4
     # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 
     #                                             step_size=step_size, 
@@ -273,19 +294,22 @@ def main():
 
 
     train_loss_lst, train_acc_lst, val_loss_lst, val_acc_lst = train(model, 
-                                                                    train_loader, 
-                                                                    test_loader, 
-                                                                    epochs=args.epochs, 
-                                                                    criterion=criterion, 
-                                                                    optimizer=optimizer, 
-                                                                    #scheduler=scheduler,
-                                                                    patience=args.patience,
-                                                                    save_best_path=save_best_path)
+                                                                     train_loader, 
+                                                                     test_loader, 
+                                                                     epochs=args.epochs, 
+                                                                     criterion=criterion, 
+                                                                     optimizer=optimizer, 
+                                                                     #scheduler=scheduler,
+                                                                     patience=args.patience,
+                                                                     save_best_path=save_best_path)
+    
     free_vram(model, optimizer)
 
     best_model = ViVQAModel(projection_dim=args.projection_dim,
                             hidden_dim=args.hidden_dim,
                             answer_space_len=answer_space_len,
+                            text_encoder_dict=text_encoder_dict, 
+                            img_encoder_dict=img_encoder_dict,
                             is_text_augment=False, 
                             is_img_augment=False).to(device)
 
