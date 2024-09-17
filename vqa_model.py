@@ -1,11 +1,7 @@
-import json
 import torch
 import torch.nn as nn
 
 from torch.functional import F
-
-from text_encoder import text_model
-from img_encoder import img_model
 
 
 class TextEncoder(nn.Module):
@@ -49,13 +45,26 @@ class ImageEncoder(nn.Module):
         self.model = img_model
         self.linear = nn.Linear(self.model.num_features * 7 * 7, projection_dim)
 
-    def forward(self, inputs):
-        x = self.model.forward_features(inputs)
-        x = x.view(x.size(0), -1)
+    def forward(self, img_inputs_lst):
+        if self.training and self.is_img_augment:
+            embed_lst = [] 
+            for img_inputs in img_inputs_lst[:-1]:
+                x = self.model.forward_features(img_inputs)
+                x = x.view(x.size(0), -1)
+                embed_lst.append(x)
+            img_features_t = torch.stack(embed_lst[1:], dim=1)
+            x = torch.sum(img_features_t, dim=1)
+            x *= img_inputs_lst[-1]
+            x = x + embed_lst[0]
+        else: 
+            x = self.model.forward_features(img_inputs_lst[0])
+            x = x.view(x.size(0), -1)
+        
         x = self.linear(x)
         x = F.gelu(x)
 
-        return x 
+        return x
+
 
 class Classifier(nn.Module):
     def __init__(self, projection_dim, hidden_dim, answer_space):
@@ -76,12 +85,13 @@ class Classifier(nn.Module):
 
 class ViVQAModel(nn.Module):
     def __init__(self, projection_dim, hidden_dim, answer_space_len, 
+                 text_encoder_dict, img_encoder_dict,
                  is_text_augment=True, is_img_augment=False):
         super().__init__()
-        self.text_encoder = TextEncoder(text_model=text_model,
+        self.text_encoder = TextEncoder(text_model=text_encoder_dict['text_model'],
                                         projection_dim=projection_dim,
                                         is_text_augment=is_text_augment)
-        self.img_encoder = ImageEncoder(img_model=img_model,
+        self.img_encoder = ImageEncoder(img_model=img_encoder_dict['img_model'],
                                         projection_dim=projection_dim,
                                         is_img_augment=is_img_augment)
         self.classifier = Classifier(projection_dim=projection_dim,
