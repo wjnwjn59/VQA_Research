@@ -1,6 +1,6 @@
 import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '2,3'
-os.environ["WORLD_SIZE"] = '2'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["WORLD_SIZE"] = '1'
 
 from dotenv import load_dotenv
 
@@ -21,10 +21,10 @@ from torch.utils.data import DataLoader
 from tqdm import tqdm
 
 from config import pipeline_config
-from torch_dataset import ViVQADataset
+from vqa_datasets import get_dataset
 from text_encoder import load_text_encoder
 from img_encoder import load_img_encoder
-from vqa_model import ViVQAModel
+from scheduler_vqa_model import ViVQAModel
 from utils import get_label_encoder
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -92,9 +92,9 @@ def train(model,
           epochs, 
           criterion, 
           optimizer, 
-          #scheduler,
           patience=5,
-          save_best_path='./weights/best.pt'):
+          save_best_path='./weights/best.pt',
+          is_log_result=True):
     
     best_val_loss = np.inf
     epochs_no_improve = 0
@@ -104,6 +104,7 @@ def train(model,
     val_loss_lst = []
     val_acc_lst = []
     for epoch in range(epochs):
+        model.update_epoch(epoch)
         train_batch_loss_lst = []
         train_batch_acc_lst = []
 
@@ -131,8 +132,6 @@ def train(model,
 
             epoch_iterator.set_postfix({'Batch Loss': loss.item()})
 
-        # scheduler.step()
-
         val_loss, val_acc = evaluate(model,
                                      val_loader,
                                      criterion)
@@ -145,13 +144,14 @@ def train(model,
         val_loss_lst.append(val_loss)
         val_acc_lst.append(val_acc)
 
-        wandb.log({
-            'epoch': epoch + 1,
-            'train_loss': train_loss,
-            'train_acc': train_acc,
-            'val_loss': val_loss,
-            'val_acc': val_acc
-        })
+        if is_log_result:
+            wandb.log({
+                'epoch': epoch + 1,
+                'train_loss': train_loss,
+                'train_acc': train_acc,
+                'val_loss': val_loss,
+                'val_acc': val_acc
+            })
 
         print(f'EPOCH {epoch + 1}: Train loss: {train_loss:.4f}\tTrain acc: {train_acc:.4f}\tVal loss: {val_loss:.4f}\tVal acc: {val_acc:.4f}')
 
@@ -170,9 +170,10 @@ def train(model,
 def parse_args():
     parser = argparse.ArgumentParser(description='ViVQA Training Script')
     parser.add_argument('--seed', type=int, default=pipeline_config.seed, help='Random seed')
-    parser.add_argument('--gpus', type=str, default='0,1', help='GPU ID. Default is GPU ID 0,1.')
+    parser.add_argument('--gpus', type=str, default='0', help='Number of GPUs used')
     parser.add_argument('--project_name', type=str, default='vivqa_paraphrase_augmentation', help='Project name for wandb')
     parser.add_argument('--exp_name', type=str, help='Experiment name for wandb')
+    parser.add_argument('--dataset_name', default=pipeline_config.dataset_name, type=str, help='Name of the dataset')
     parser.add_argument('--data_dir', default=pipeline_config.data_dir, type=str, help='Dataset directory')
     parser.add_argument('--learning_rate', type=float, default=pipeline_config.learning_rate, help='Learning rate')
     parser.add_argument('--epochs', type=int, default=pipeline_config.epochs, help='Number of epochs')
@@ -182,11 +183,8 @@ def parse_args():
     parser.add_argument('--projection_dim', type=int, default=pipeline_config.projection_dim, help='Projection dimension')
     parser.add_argument('--weight_decay', type=float, default=pipeline_config.weight_decay, help='Weight decay')
     parser.add_argument('--patience', type=int, default=pipeline_config.patience, help='Patience for early stopping')
-    parser.add_argument('--text_max_len', type=int, default=pipeline_config.text_max_len, help='Maximum text length')
-    parser.add_argument('--fusion_strategy', type=str, default=pipeline_config.fusion_strategy, help='Fusion strategy')
     parser.add_argument('--text_encoder_id', type=str, default=pipeline_config.text_encoder_id, help='Text encoder ID')
     parser.add_argument('--img_encoder_id', type=str, default=pipeline_config.img_encoder_id, help='Image encoder ID')
-    parser.add_argument('--paraphraser_id', type=str, default=pipeline_config.paraphraser_id, help='Paraphraser ID')
     parser.add_argument('--is_text_augment', type=lambda x: (str(x).lower() == 'true'), default=pipeline_config.is_text_augment, help='Augment with text paraphrases')
     parser.add_argument('--n_text_paras', type=int, default=pipeline_config.n_text_paras, help='Number of paraphrases')
     parser.add_argument('--text_para_thresh', type=float, default=pipeline_config.text_para_thresh, help='Paraphrase threshold')
@@ -194,8 +192,9 @@ def parse_args():
     parser.add_argument('--is_img_augment', type=lambda x: (str(x).lower() == 'true'), default=pipeline_config.is_img_augment, help='Augment with img geometric shift')
     parser.add_argument('--n_img_augments', type=int, default=pipeline_config.n_text_paras, help='Number of image augments')
     parser.add_argument('--img_augment_thresh', type=float, default=pipeline_config.img_augment_thresh, help='Image augmentation threshold')
+    parser.add_argument('--use_dynamic_thresh', type=lambda x: (str(x).lower() == 'true'), default=pipeline_config.use_dynamic_thresh, help='Use dynamic threshold scaled by epochs')
     parser.add_argument('--save_ckpt_dir', type=str, default='runs/train', help='Directory to save checkpoints')
-    parser.add_argument('--is_evaluate', type=lambda x: (str(x).lower() == 'true'), default=True, help='Evaluate the performance of the model on test set')
+    parser.add_argument('--is_log_result', type=lambda x: (str(x).lower() == 'true'), default=True, help='Log training and eval results to wandb')
     
     return parser.parse_args()
 
@@ -203,17 +202,6 @@ def main():
     args = parse_args()
 
     set_seed(args.seed)
-
-    # if args.gpus:
-    #     os.environ["CUDA_VISIBLE_DEVICES"] = args.gpus
-    #     os.environ["WORLD_SIZE"] = str(len(args.gpus.split(',')))
-
-    if not args.exp_name:
-        text_augment_info = f'istextaug{args.is_text_augment}_ntextpara{args.n_text_paras}_random{args.text_para_thresh}_nparapool{args.n_text_para_pool}'
-        img_augment_info = f'isimgaug{args.is_img_augment}_nimgaug{args.n_img_augments}_random{args.img_augment_thresh}'
-        exp_name = f'phase4_vivqa_{text_augment_info}_{img_augment_info}'
-    else:
-        exp_name = args.exp_name
 
     if args.text_encoder_id:
         text_encoder_dict = load_text_encoder(args.text_encoder_id)
@@ -224,51 +212,9 @@ def main():
         img_encoder_dict = load_img_encoder(args.img_encoder_id)
     else:
         raise Exception('No img encoder specified!')
-    
 
-    wandb.init(
-        project=args.project_name,
-        name=exp_name,
-        config=pipeline_config.__dict__)
-
-    timestamp = time.strftime("%Y%m%d-%H%M%S")
-    weights_dirname= f'{args.save_ckpt_dir}/weights_{timestamp}'
-
-    os.makedirs(weights_dirname, exist_ok=True)
-    save_best_path = f'./{weights_dirname}/{exp_name}_best.pt'
-
-    label2idx, idx2label, answer_space_len = get_label_encoder(args.data_dir)
-        
-    # Enable augmentation in training set
-    train_dataset = ViVQADataset(data_dir=args.data_dir,
-                                 data_mode='train',
-                                 text_encoder_dict=text_encoder_dict,
-                                 img_encoder_dict=img_encoder_dict, 
-                                 label_encoder=label2idx,
-                                 is_text_augment=args.is_text_augment,
-                                 is_img_augment=args.is_img_augment,
-                                 n_text_paras=args.n_text_paras,
-                                 text_para_thresh=args.text_para_thresh,
-                                 n_para_pool=args.n_text_para_pool,
-                                 n_img_augments=args.n_img_augments,
-                                 img_augment_thresh=args.img_augment_thresh)
-
-    # Disable augmentation for all modalities in test set
-    test_dataset = ViVQADataset(data_dir=args.data_dir,
-                                data_mode='val',
-                                text_encoder_dict=text_encoder_dict,
-                                img_encoder_dict=img_encoder_dict, 
-                                label_encoder=label2idx,
-                                is_text_augment=False,
-                                is_img_augment=False)
-
-    train_loader = DataLoader(train_dataset,
-                              batch_size=args.train_batch_size,
-                              shuffle=True)
-
-    test_loader = DataLoader(test_dataset,
-                             batch_size=args.test_batch_size,
-                             shuffle=False)
+    label2idx, idx2label, answer_space_len = get_label_encoder(data_dir=args.data_dir, 
+                                                               dataset_name=args.dataset_name)
 
     model = ViVQAModel(projection_dim=args.projection_dim,
                        hidden_dim=args.hidden_dim,
@@ -276,7 +222,11 @@ def main():
                        text_encoder_dict=text_encoder_dict, 
                        img_encoder_dict=img_encoder_dict,
                        is_text_augment=args.is_text_augment, 
-                       is_img_augment=args.is_img_augment)
+                       is_img_augment=args.is_img_augment,
+                       total_epochs=args.epochs,
+                       use_dynamic_thresh=args.use_dynamic_thresh,
+                       text_para_thresh=args.text_para_thresh,
+                       img_augment_thresh=args.img_augment_thresh)
     
     if len(args.gpus.split(',')) > 1:
         model = nn.DataParallel(model,
@@ -286,22 +236,60 @@ def main():
     optimizer = torch.optim.AdamW(model.parameters(),
                                   lr=args.learning_rate,
                                   weight_decay=args.weight_decay)
-    # step_size = EPOCHS * 0.4
-    # scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 
-    #                                             step_size=step_size, 
-    #                                             gamma=0.1)
+
     criterion = nn.CrossEntropyLoss()
 
+    # In your main function:
+    train_dataset = get_dataset(text_encoder_dict=text_encoder_dict,
+                                img_encoder_dict=img_encoder_dict,
+                                label_encoder=label2idx,
+                                is_train=True, 
+                                **vars(args))
+    
+    test_dataset = get_dataset(text_encoder_dict=text_encoder_dict,
+                               img_encoder_dict=img_encoder_dict,
+                               label_encoder=label2idx,
+                               is_train=False, 
+                               **vars(args))
+    
 
+    train_loader = DataLoader(train_dataset,
+                              batch_size=args.train_batch_size,
+                              shuffle=True)
+
+    test_loader = DataLoader(test_dataset,
+                             batch_size=args.test_batch_size,
+                             shuffle=False)
+
+    if not args.exp_name:
+        text_augment_info = f'istextaug{args.is_text_augment}_ntextpara{args.n_text_paras}_random{args.text_para_thresh}_nparapool{args.n_text_para_pool}'
+        img_augment_info = f'isimgaug{args.is_img_augment}_nimgaug{args.n_img_augments}_random{args.img_augment_thresh}'
+        exp_name = f'phase4_seed{args.seed}_{args.dataset_name}_{text_augment_info}_{img_augment_info}'
+    else:
+        exp_name = args.exp_name
+
+    if args.is_log_result:
+        wandb.init(
+            project=args.project_name,
+            name=exp_name,
+            config=pipeline_config.__dict__)
+
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
+    weights_dirname= f'{args.save_ckpt_dir}/weights_{timestamp}'
+
+    os.makedirs(weights_dirname, exist_ok=True)
+    save_best_path = f'./{weights_dirname}/{exp_name}_best.pt'
+
+    # Training
     train_loss_lst, train_acc_lst, val_loss_lst, val_acc_lst = train(model, 
                                                                      train_loader, 
                                                                      test_loader, 
                                                                      epochs=args.epochs, 
                                                                      criterion=criterion, 
                                                                      optimizer=optimizer, 
-                                                                     #scheduler=scheduler,
                                                                      patience=args.patience,
-                                                                     save_best_path=save_best_path)
+                                                                     save_best_path=save_best_path,
+                                                                     is_log_result=args.is_log_result)
     
     free_vram(model, optimizer)
 
@@ -322,11 +310,12 @@ def main():
 
     args_dict = vars(args)
 
-    exp_table = wandb.Table(
-        columns=list(args_dict.keys()) + ['test_loss', 'test_acc'], 
-        data=[list(args_dict.values()) + [test_loss, test_acc]]
-    )
-    wandb.log({"Exp_table": exp_table})
+    if args.is_log_result:
+        exp_table = wandb.Table(
+            columns=list(args_dict.keys()) + ['test_loss', 'test_acc'], 
+            data=[list(args_dict.values()) + [test_loss, test_acc]]
+        )
+        wandb.log({"Exp_table": exp_table})
 
     print(f'Test loss: {test_loss}\tTest acc: {test_acc}')
     
