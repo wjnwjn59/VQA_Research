@@ -1,9 +1,14 @@
-import random
+import json
 import shutil
 import pandas as pd
 import os
 
-def generate_answer_space_file(data_dir):
+DATASET_NAME_MAP = {
+    'vivqa': 'ViVQA',
+    'openvivqa': 'OpenViVQA'
+}
+
+def generate_answer_space_file_vivqa(data_dir):
     train_csv_path = os.path.join(data_dir, 'ViVQA', 'train.csv')
     test_csv_path = os.path.join(data_dir, 'ViVQA', 'test.csv')
 
@@ -22,8 +27,31 @@ def generate_answer_space_file(data_dir):
     with open(save_path, 'w+') as f:
         f.write('\n'.join(answer_space))
 
-def get_label_encoder(data_dir):
-    save_path = os.path.join(data_dir, 'ViVQA', 'answer_space.txt')
+def generate_answer_space_file_openvivqa(data_dir):
+    train_json_path = os.path.join(data_dir, 'OpenViVQA', 'vlsp2023_train_data.json')
+    dev_json_path = os.path.join(data_dir, 'OpenViVQA', 'vlsp2023_dev_data.json')
+
+    answer_space = set()
+
+    for json_path in [train_json_path, dev_json_path]:
+        with open(json_path, 'r') as file:
+            data = json.load(file)
+        
+        annotations = data.get('annotations', {})
+        
+        for annotation in annotations.values():
+            answer = annotation['answer']
+            answer_space.add(answer)
+
+    save_path = os.path.join(data_dir, 'OpenViVQA', 'answer_space.txt')
+    with open(save_path, 'w+') as f:
+        f.write('\n'.join(sorted(answer_space)))
+
+    print(f"Answer space file generated at: {save_path}")
+    print(f"Total unique answers: {len(answer_space)}")
+
+def get_label_encoder(data_dir, dataset_name):
+    save_path = os.path.join(data_dir, DATASET_NAME_MAP[dataset_name], 'answer_space.txt')
     with open(save_path, 'r') as f:
         lines = f.read().splitlines()
 
@@ -51,7 +79,8 @@ def copy_and_rename_images(source_folder, destination_folder):
 
 
 if __name__ == '__main__':
-    #generate_answer_space_file('/home/VLAI/datasets')
-    source_folder = '/home/VLAI/datasets/COCO_Images/val2014'
-    destination_folder = '/home/VLAI/datasets/COCO_Images/merge'
-    copy_and_rename_images(source_folder, destination_folder)
+    #generate_answer_space_file_vivqa('/home/VLAI/datasets')
+    generate_answer_space_file_openvivqa('/home/VLAI/datasets')
+    # source_folder = '/home/VLAI/datasets/COCO_Images/val2014'
+    # destination_folder = '/home/VLAI/datasets/COCO_Images/merge'
+    # copy_and_rename_images(source_folder, destination_folder)
