@@ -16,6 +16,6 @@ def load_img_encoder(img_encoder_id):
     return {
         'model_name': img_encoder_id,
         'img_processor': img_processor,
-        'latent_space': img_model.num_features * 7 * 7,
+        'features_dim': img_model.num_features * 7 * 7,
         'img_model': img_model
     }
