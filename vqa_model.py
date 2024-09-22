@@ -3,7 +3,6 @@ import torch.nn as nn
 
 from torch.functional import F
 
-
 class TextEncoder(nn.Module):
     def __init__(self, text_model, projection_dim, is_text_augment):
         super().__init__()
