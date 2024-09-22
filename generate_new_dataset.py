@@ -1,8 +1,9 @@
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '2'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 os.environ["WORLD_SIZE"] = '1'
 
+import json
 import pandas as pd
 import argparse
 import time
@@ -10,7 +11,7 @@ import torch
 import random
 import numpy as np
 
-from paraphraser import get_paraphrase
+from .vqa_datasets.augmentations.paraphraser import get_paraphrase
 
 def set_seed(random_seed):
     random.seed(random_seed)
@@ -30,6 +31,23 @@ def generate_df_w_paraphrases(data_filepath, num_paraphrase):
     df['question_paraphrase'] = df['question'].apply(lambda x: get_paraphrase(x, num_paraphrase))
     
     return df
+
+def generate_json_w_paraphrases(data_filepath, num_paraphrase, output_filepath=''):
+    with open(data_filepath, 'r') as file:
+        data = json.load(file)
+    
+    annotations = data.get('annotations', {})
+    
+    for annotation_id, annotation in annotations.items():
+        question = annotation.get('question', "")
+        if question:
+            paraphrases = get_paraphrase(question, num_paraphrase)
+            annotation['paraphrases'] = paraphrases
+    
+    if output_filepath:
+        with open(output_filepath, 'w') as outfile:
+            json.dump(data, outfile, ensure_ascii=False, indent=4)
+    
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Generate a new dataset")
@@ -51,14 +69,21 @@ def main():
     print('Start processing...')
     start_time = time.time()
     set_seed(random_seed)
-    paraphrase_df = generate_df_w_paraphrases(data_filepath=train_filepath,
-                                              num_paraphrase=num_params)
+
+    if '.csv' in train_filepath:
+        paraphrase_df = generate_df_w_paraphrases(data_filepath=train_filepath,
+                                                num_paraphrase=num_params)
+        if save_filepath:
+            paraphrase_df.to_csv(save_filepath, index=False)
+            print(f'Results saved to {save_filepath}')
+    else:
+        generate_json_w_paraphrases(data_filepath=train_filepath,
+                                    num_paraphrase=num_params,
+                                    output_filepath=save_filepath)
+        
     print('Paraphrases generation completed!')
     print(f'Processing time: {time.time() - start_time}')
 
-    if save_filepath:
-        paraphrase_df.to_csv(save_filepath, index=False)
-        print(f'Results saved to {save_filepath}')
 
 if __name__ == "__main__":
     main()
