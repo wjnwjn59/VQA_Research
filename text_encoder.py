@@ -91,23 +91,25 @@ def text_processor(text, text_tokenizer):
                                padding='max_length', 
                                truncation=True,
                                return_token_type_ids=False,
-                               return_tensors='pt').to(device)
-    
-    input_ids = {k: v.squeeze() for k, v in input_ids.items()}
+                               return_tensors='pt')
 
     return input_ids
+
+class TextProcessorWrapper:
+    def __init__(self, tokenizer):
+        self.tokenizer = tokenizer
+
+    def __call__(self, text):
+        return text_processor(text, self.tokenizer)
 
 def load_text_encoder(text_model_id):
     text_tokenizer = AutoTokenizer.from_pretrained(text_model_id)
     text_model = AutoModel.from_pretrained(text_model_id,
                                            device_map=device)
 
-    def text_processor_with_tokenizer(text):
-        return text_processor(text, text_tokenizer)
-
     return {
         'model_name': text_model_id,
-        'text_processor': text_processor_with_tokenizer,
+        'text_processor': TextProcessorWrapper(text_tokenizer),
         'features_dim': text_model.config.hidden_size,
         'text_model': text_model
     }
