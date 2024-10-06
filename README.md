@@ -21,6 +21,14 @@ cd dataset
 python download.py
 ```
 
+## Scripts
+```bash
+python3 train.py --seed 59 --is_text_augment False --is_img_augment False
+python3 train.py --seed 59 --is_text_augment True --n_text_paras 1 --n_text_para_pool 10 --text_para_thresh 0.2 --is_img_augment False
+python3 train.py --seed 59 --is_text_augment False --is_img_augment True --n_img_augments 3 --img_augment_thresh 0.2
+python3 train.py --seed 62 --use_dynamic_thresh True --is_text_augment True --n_text_paras 1 --n_text_para_pool 30 --is_img_augment False
+```
+
 ## Description
 
 This repo contains the survey, source and re-implementation code of several methods related to the Visual Question Answering task.
@@ -58,3 +66,4 @@ This repo contains the survey, source and re-implementation code of several meth
 |     [OpenViVQA](https://arxiv.org/abs/2305.04183)      | Open-domain Vietnamese Visual Question Answering | 11.199 images, 37.914 QA pairs  |
 |      [ViCLEVR](https://arxiv.org/abs/2310.18046)       |           Vietnamese Visual Reasoning            | 26.216 images, 30.000 QA pairs  |
 | [ViVQA](https://aclanthology.org/2021.paclic-1.72.pdf) |       Vietnamese Visual Question Answering       | 10.328 images, 15.000 QA pairs  |
+
