@@ -21,9 +21,8 @@ class TextEncoder(nn.Module):
                 x = x['last_hidden_state'][:, 0, :]
                 embed_lst.append(x)
         
-            para_features_t = torch.stack(embed_lst[1:], dim=1)
+            para_features_t = torch.stack(embed_lst, dim=1)
             x = torch.sum(para_features_t, dim=1)
-            x = x + embed_lst[0]
         else:
             text_inputs = text_inputs_lst[0]
             x = self.model(**text_inputs)
@@ -52,9 +51,8 @@ class ImageEncoder(nn.Module):
                 x = x.view(x.size(0), -1)
                 embed_lst.append(x)
 
-            img_features_t = torch.stack(embed_lst[1:], dim=1)
+            img_features_t = torch.stack(embed_lst, dim=1)
             x = torch.sum(img_features_t, dim=1)
-            x = x + embed_lst[0]
         else: 
             x = self.model.forward_features(img_inputs_lst[0])
             x = x.view(x.size(0), -1)
@@ -81,7 +79,6 @@ class Classifier(nn.Module):
 
         return x 
 
-
 class ViVQAModel(nn.Module):
     def __init__(self, projection_dim, hidden_dim, answer_space_len, 
                  text_encoder_dict, img_encoder_dict,
@@ -105,7 +102,7 @@ class ViVQAModel(nn.Module):
         self.img_augment_thresh = img_augment_thresh
         self.total_epochs = total_epochs
         self.current_epoch = 0
-        self.start_threshold = 1.0
+        self.start_threshold = 0.6
         self.min_threshold = 0.0
 
     def get_threshold(self):
