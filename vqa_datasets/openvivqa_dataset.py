@@ -93,11 +93,11 @@ class OpenViVQADataset(Dataset):
         img_pils = Image.open(img_paths).convert('RGB')
         label = self.label_encoder[answers]
 
-        img_inputs_lst = [self.img_encoder_dict['img_processor'](img_pils).to(device)]
+        img_inputs_lst = [self.img_encoder_dict['img_processor'](img_pils)]
         
         if self.data_mode == 'train' and self.is_img_augment:
             augmented_imgs_pil = augment_image(img_pils, self.n_img_augments)
-            augmented_imgs = [self.img_encoder_dict['img_processor'](img).to(self.device) for img in augmented_imgs_pil]
+            augmented_imgs = [self.img_encoder_dict['img_processor'](img) for img in augmented_imgs_pil]
 
             img_inputs_lst += augmented_imgs 
 
@@ -110,7 +110,7 @@ class OpenViVQADataset(Dataset):
 
             text_inputs_lst += paraphrase_inputs_lst 
         
-        labels = torch.tensor(label, dtype=torch.long).to(device)
+        labels = torch.tensor(label, dtype=torch.long)
 
         data_outputs = {
             'text_inputs_lst': text_inputs_lst,
