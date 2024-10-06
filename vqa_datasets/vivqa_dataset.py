@@ -78,39 +78,25 @@ class ViVQADataset(Dataset):
         img_pils = Image.open(img_paths).convert('RGB')
         label = self.label_encoder[answers]
 
-        img_inputs_lst = [self.img_encoder_dict['img_processor'](img_pils).to(device)]
+        img_inputs_lst = [self.img_encoder_dict['img_processor'](img_pils)]
         
-        #r = random.random()
         if self.data_mode == 'train' and self.is_img_augment:
             augmented_imgs_pil = augment_image(img_pils, self.n_img_augments)
-            augmented_imgs = [self.img_encoder_dict['img_processor'](img).to(self.device) for img in augmented_imgs_pil]
+            augmented_imgs = [self.img_encoder_dict['img_processor'](img) for img in augmented_imgs_pil]
 
-            # if r < self.img_augment_thresh:
-            #     is_fuse_para_t = torch.ones(self.img_encoder_dict['features_dim']).to(self.device)
-            # else:
-            #     is_fuse_para_t = torch.zeros(self.img_encoder_dict['features_dim']).to(self.device)
-
-            # img_inputs_lst += augmented_imgs + [is_fuse_para_t]
             img_inputs_lst += augmented_imgs 
 
         text_inputs_lst = [self.text_encoder_dict['text_processor'](questions)]
         
-        # r = random.random()
         if self.data_mode == 'train' and self.is_text_augment:
             para_questions = self.para_questions[idx]
             para_questions = ast.literal_eval(para_questions)
             selected_para_questions = random.sample(para_questions, self.n_text_paras)
             paraphrase_inputs_lst = [self.text_encoder_dict['text_processor'](text) for text in selected_para_questions]
 
-            # if r < self.text_para_thresh:
-            #     is_fuse_para_t = torch.ones(self.text_encoder_dict['features_dim']).to(device)
-            # else: 
-            #     is_fuse_para_t = torch.zeros(self.text_encoder_dict['features_dim']).to(device)
-
-            # text_inputs_lst += paraphrase_inputs_lst + [is_fuse_para_t]
             text_inputs_lst += paraphrase_inputs_lst 
         
-        labels = torch.tensor(label, dtype=torch.long).to(device)
+        labels = torch.tensor(label, dtype=torch.long)
 
         data_outputs = {
             'text_inputs_lst': text_inputs_lst,
