@@ -131,7 +131,7 @@ class ViVQAModel(nn.Module):
         self.img_augment_thresh = img_augment_thresh
         self.total_epochs = total_epochs
         self.current_epoch = 0
-        self.start_threshold = 1.0
+        self.start_threshold = 0.6
         self.min_threshold = 0.0
 
     # Compute dynamic thresholds for augmentation based on the current epoch
