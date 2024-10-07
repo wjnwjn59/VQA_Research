@@ -9,11 +9,14 @@ peft==0.11.1
 Pillow==10.3.0
 py_vncorenlp==0.1.4
 Requests==2.32.3
-torch==2.3.1
-torchvision==0.18.1
+torch==2.6.0.dev20240922+cu124
+torchvision==0.20.0.dev20240922+cu124
+--pre
+--extra-index-url https://download.pytorch.org/whl/nightly/cu124
 sentencepiece==0.2.0
 wandb==0.17.2
 timm==1.0.7
 python-dotenv==1.0.1
 scikit-learn==1.5.1
 pynvml==11.5.3
+git+https://github.com/salaniz/pycocoevalcap.git
