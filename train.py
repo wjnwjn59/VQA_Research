@@ -1,8 +1,8 @@
 import os
 
 # Set environment variables for CUDA devices and world size for distributed training
-os.environ["CUDA_VISIBLE_DEVICES"] = '0,1'
-os.environ["WORLD_SIZE"] = '2'
+os.environ["CUDA_VISIBLE_DEVICES"] = '1,2'  # Server GPUs indices 
+os.environ["WORLD_SIZE"] = '2'  # Amount of used GPUs
 
 # Load environment variables from a .env file
 from dotenv import load_dotenv
@@ -317,7 +317,7 @@ def train(model,
 def parse_args():
     parser = argparse.ArgumentParser(description='ViVQA Training Script')
     parser.add_argument('--seed', type=int, default=pipeline_config.seed, help='Random seed')
-    parser.add_argument('--gpus', type=str, default='0,1', help='Number of GPUs used')
+    parser.add_argument('--gpus', type=str, default='0,1', help='Indices of GPUs used count from 0')
     parser.add_argument('--project_name', type=str, default='vivqa_paraphrase_augmentation', help='Project name for wandb')
     parser.add_argument('--exp_name', type=str, help='Experiment name for wandb')
     parser.add_argument('--dataset_name', default=pipeline_config.dataset_name, type=str, help='Name of the dataset')
@@ -337,7 +337,7 @@ def parse_args():
     parser.add_argument('--text_para_thresh', type=float, default=pipeline_config.text_para_thresh, help='Paraphrase threshold')
     parser.add_argument('--n_text_para_pool', type=int, default=pipeline_config.n_text_para_pool, help='The number of paraphrase in the paraphrase pool')
     parser.add_argument('--is_img_augment', type=lambda x: (str(x).lower() == 'true'), default=pipeline_config.is_img_augment, help='Augment with img geometric shift')
-    parser.add_argument('--n_img_augments', type=int, default=pipeline_config.n_text_paras, help='Number of image augments')
+    parser.add_argument('--n_img_augments', type=int, default=pipeline_config.n_img_augments, help='Number of image augments')
     parser.add_argument('--img_augment_thresh', type=float, default=pipeline_config.img_augment_thresh, help='Image augmentation threshold')
     parser.add_argument('--use_dynamic_thresh', type=lambda x: (str(x).lower() == 'true'), default=pipeline_config.use_dynamic_thresh, help='Use dynamic threshold scaled by epochs')
     parser.add_argument('--save_ckpt_dir', type=str, default='runs/train', help='Directory to save checkpoints')
