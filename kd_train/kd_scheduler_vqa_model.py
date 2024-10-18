@@ -143,7 +143,7 @@ class ViVQAModel(nn.Module):
         self.img_augment_thresh = img_augment_thresh
         self.total_epochs = total_epochs
         self.current_epoch = 0
-        self.start_threshold = 0.6
+        self.start_threshold = 1
         self.min_threshold = 0.0
         
         # Flag for Knowledge Distillation

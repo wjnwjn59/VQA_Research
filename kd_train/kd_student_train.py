@@ -35,6 +35,7 @@ from img_encoder import load_img_encoder
 from kd_vqa_model import ViVQAModel as student_ViVQAModel
 from kd_scheduler_vqa_model import ViVQAModel as teacher_ViVQAModel
 from utils import get_label_encoder
+from eval import evaluate, compute_accuracy, compute_cider
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -132,69 +133,8 @@ def free_model(model):
     torch.cuda.empty_cache()
 
 
-def compute_accuracy(logits, labels):
-    _, preds = torch.max(logits, 1)
-    correct = (preds == labels).sum().item()
-    accuracy = correct / logits.size(0)
-
-    return accuracy
-
-
-def evaluate(model, val_loader, criterion): 
-    """
-    Evaluate the model on the validation dataset.
-    
-    Parameters:
-    - model: nn.Module, the model to evaluate
-    - val_loader: DataLoader, DataLoader for validation dataset
-    - criterion: loss function, to calculate loss
-    
-    Returns:
-    - eval_loss: float, average validation loss
-    - eval_acc: float, average validation accuracy
-    """
-    
-    model.eval()  # Set model to evaluation mode
-    eval_losses = []
-    eval_accs = []
-    with torch.no_grad():
-        for idx, batch in enumerate(val_loader):
-            # Extract data from batch
-            text_inputs_lst = batch.pop('text_inputs_lst')
-            img_inputs_lst = batch.pop('img_inputs')
-            labels = batch.pop('labels')
-
-            # Move inputs to device
-            text_inputs_lst = [
-                {k: v.squeeze().to(device, non_blocking=True) for k, v in input_ids.items()} \
-                    for input_ids in text_inputs_lst]
-            img_inputs_lst = [inputs.to(device, non_blocking=True) for inputs in img_inputs_lst]
-            labels = labels.to(device, non_blocking=True)
-            
-            # Forward pass 
-            # outputs are logits and kd_logits
-            outputs = model(text_inputs_lst, img_inputs_lst)
-            if len(outputs) == 2:
-                logits, _ = outputs
-            else:
-                logits = outputs
-
-            # Calculate loss and accuracy
-            loss = criterion(logits, labels)
-            acc = compute_accuracy(logits, labels)
-
-            eval_losses.append(loss.item())
-            eval_accs.append(acc)
-
-    # Compute average evaluation loss and accuracy
-    eval_loss = sum(eval_losses) / len(eval_losses)
-    eval_acc = sum(eval_accs) / len(eval_accs)
-
-    return eval_loss, eval_acc
-
-
-def train(student_model, 
-          teacher_model,
+def train(student, 
+          teacher,
           T,  # Scaled by T**2 as suggested by the authors of the paper "Distilling the knowledge in a neural network"
           student_loss_weight,
           train_loader, 
@@ -203,6 +143,8 @@ def train(student_model,
           criterion, 
           optimizer, 
           scaler,
+          dataset_name, 
+          idx2label, 
           patience=5,
           save_best_path='./weights/best.pt',
           is_log_result=True,
@@ -213,8 +155,8 @@ def train(student_model,
     Train the model with the specified parameters and evaluate on validation set.
     
     Parameters:
-    - student_model: nn.Module, the Student model to train
-    - teacher_model: nn.Module, the Teacher is used for training the Student model
+    - student: nn.Module, the Student model to train
+    - teacher: nn.Module, the Teacher is used for training the Student model
     - T: int, temperature controls the smoothness of the output distributions. Larger T leads to smoother distributions, thus smaller probabilities get a larger boost.
     - student_loss_weight: float, loss weight of the student model in Knowledge Distillation Loss methods (range 0-1)
     - train_loader: DataLoader, DataLoader for training dataset
@@ -223,6 +165,8 @@ def train(student_model,
     - criterion: loss function, to calculate loss
     - optimizer: optimizer, to update model weights
     - scaler: scaler, for mixed precision training
+    - dataset_name: str, dataset name to determine evaluation metric (accuracy or CIDEr)
+    - idx2label: dict, mapping of index to label for text-based evaluation (for CIDEr)
     - patience: int, number of epochs to wait for improvement before early stopping
     - save_best_path: str, path to save the best model
     - is_log_result: bool, whether to log results to Weights and Biases
@@ -231,33 +175,40 @@ def train(student_model,
 
     Returns:
     - train_loss_lst: list, training losses for each epoch
-    - train_acc_lst: list, training accuracies for each epoch
+    - train_acc_lst: list, training accuracies (None for `openvivqa`)
+    - train_cider_lst: list, training CIDEr scores (None for non-`openvivqa`)
     - val_loss_lst: list, validation losses for each epoch
-    - val_acc_lst: list, validation accuracies for each epoch
+    - val_acc_lst: list, validation accuracies (None for `openvivqa`)
+    - val_cider_lst: list, validation CIDEr scores (None for non-`openvivqa`)
     """
     
-    teacher_model.eval()  # Used for inference
-    student_model.train()  # Train Student only
+    teacher.eval()  # Used for inference
+    student.train()  # Train Student only
     
     best_val_loss = np.inf  # Initialize the best validation loss
     epochs_no_improve = 0  # Counter for epochs without improvement
     cosine_loss = nn.CosineEmbeddingLoss()  # Loss for Cosine Minimization method
     
     train_loss_lst = []
-    train_acc_lst = []
+    train_acc_lst = []  
+    train_cider_lst = []  
     val_loss_lst = []
-    val_acc_lst = []
+    val_acc_lst = []  
+    val_cider_lst = []  
     
     for epoch in range(epochs):
-        train_batch_loss_lst = []
-        train_batch_acc_lst = []
+        total_correct = 0
+        total_loss = 0
+        total_samples = 0
+        all_predictions = [] 
+        all_references = []  
 
         # Progress bar for training batches
         epoch_iterator = tqdm(train_loader, 
                               desc=f'Epoch {epoch + 1}/{epochs}', 
                               unit='batch')
         
-        student_model.train()  # Set model to training mode
+        student.train()  # Set model to training mode
         for batch in epoch_iterator:
             # Extract data from batch
             text_inputs_lst = batch.pop('text_inputs_lst')
@@ -273,9 +224,9 @@ def train(student_model,
 
             # Forward pass with mixed precision and no_grad
             with torch.autocast(device_type=device, dtype=torch.float16, enabled=use_amp):
-                student_logits, student_kd_logits = student_model(text_inputs_lst, img_inputs_lst)
+                student_logits, student_kd_logits = student(text_inputs_lst, img_inputs_lst)
                 with torch.no_grad():
-                    teacher_logits, teacher_kd_logits = teacher_model(text_inputs_lst, img_inputs_lst) 
+                    teacher_logits, teacher_kd_logits = teacher(text_inputs_lst, img_inputs_lst) 
                     
             ################# Knowledge Distillation
             soft_targets = nn.functional.softmax(teacher_logits / T, dim=-1)
@@ -291,11 +242,24 @@ def train(student_model,
             # Calculate Loss = weight1 * KD/Cosine Loss + weight2 * Student Loss
             loss = (1 - student_loss_weight) * loss_kd + student_loss_weight * label_loss           
 
-            acc = compute_accuracy(student_logits, labels)
+            _, preds = torch.max(student_logits, 1)
 
-            train_batch_loss_lst.append(loss.item())
-            train_batch_acc_lst.append(acc)
+            total_batch_samples = labels.size(0)
+            batch_loss_sum = loss.item() * total_batch_samples
+            
+            total_samples += total_batch_samples
+            total_loss += batch_loss_sum
 
+            if dataset_name == 'openvivqa':
+                pred_texts = [idx2label[pred.item()] for pred in preds]
+                label_texts = [idx2label[label.item()] for label in labels]
+
+                all_predictions += pred_texts
+                all_references += label_texts
+            else: 
+                correct = (preds == labels).sum().item()
+                total_correct += correct
+            
             # Backward pass and optimization
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -305,42 +269,60 @@ def train(student_model,
             epoch_iterator.set_postfix({'Batch Loss': loss.item()})  # Update progress bar
 
         # Evaluate on validation set
-        val_loss, val_acc = evaluate(student_model,
-                                     val_loader,
-                                     criterion)
+        val_loss, val_acc, val_cider = evaluate(model=student, 
+                                                val_loader=val_loader, 
+                                                criterion=criterion, 
+                                                idx2label=idx2label, 
+                                                dataset_name=dataset_name)
+        
+        # Compute average training loss, accuracy, and CIDEr
+        train_loss = total_loss / total_samples
 
-        # Compute average training loss and accuracy
-        train_loss = sum(train_batch_loss_lst) / len(train_batch_loss_lst)
-        train_acc = sum(train_batch_acc_lst) / len(train_batch_acc_lst)
+        # Print the progress for the current epoch
+        print(f'EPOCH {epoch + 1}: Train loss: {train_loss:.4f}\tVal loss: {val_loss:.4f}')
 
+        if dataset_name == 'openvivqa':
+            train_acc = -1 
+            train_cider = compute_cider(all_predictions, all_references)
+            print(f'Train CIDEr: {train_cider:.4f}\tVal CIDEr: {val_cider:.4f}')
+        else:
+            train_acc = total_correct / total_samples
+            train_cider = -1
+            print(f'Train acc: {train_acc:.4f}\tVal acc: {val_acc:.4f}')
+            
+        # Append to lists
         train_loss_lst.append(train_loss)
         train_acc_lst.append(train_acc)
+        train_cider_lst.append(train_cider)
         val_loss_lst.append(val_loss)
         val_acc_lst.append(val_acc)
-
+        val_cider_lst.append(val_cider)    
+    
         # Log results to Weights and Biases
-        wandb.log({
-            'epoch': epoch + 1,
-            'train_loss': train_loss,
-            'train_acc': train_acc,
-            'val_loss': val_loss,
-            'val_acc': val_acc
-        })
+        if is_log_result:
+            log_data = {
+                'epoch': epoch + 1,
+                'train_loss': train_loss,
+                'train_acc': train_acc,
+                'train_cider': train_cider,
+                'val_loss': val_loss,
+                'val_acc': val_acc,
+                'val_cider': val_cider
+            }
+            wandb.log(log_data)
 
-        print(f'EPOCH {epoch + 1}: Train loss: {train_loss:.4f}\tTrain acc: {train_acc:.4f}\tVal loss: {val_loss:.4f}\tVal acc: {val_acc:.4f}')
-
-        # Check for early stopping
+        # Early stopping
         if val_loss < best_val_loss:
             best_val_loss = val_loss  # Update best validation loss
             epochs_no_improve = 0  # Reset no improvement counter
-            save_model(save_best_path, student_model, optimizer, scaler)  # Save the best model
+            save_model(save_best_path, student, optimizer, scaler)  # Save the best model
         else:
             epochs_no_improve += 1  # Increment counter for no improvement
             if epochs_no_improve >= patience:  # Check for early stopping condition
                 print(f'Early stopping triggered after {epochs_no_improve} epochs without improvement.')
                 break  # Exit training loop if condition met
 
-    return train_loss_lst, train_acc_lst, val_loss_lst, val_acc_lst
+    return train_loss_lst, train_acc_lst, train_cider_lst, val_loss_lst, val_acc_lst, val_cider_lst
 
 
 # Function to parse command-line arguments for the training script
@@ -460,7 +442,7 @@ def main():
     ##### Teacher
     # !!! Test with full setting and False
     # Load the Teacher model to distill its knowledge into the Student model
-    best_teacher_model = teacher_ViVQAModel(projection_dim=args.projection_dim,
+    best_teacher = teacher_ViVQAModel(projection_dim=args.projection_dim,
                                             hidden_dim=args.hidden_dim,
                                             answer_space_len=answer_space_len,
                                             text_encoder_dict=text_encoder_dict, 
@@ -483,21 +465,20 @@ def main():
         new_state_dict[new_key] = value
         
     # Load the Teacher model state
-    best_teacher_model.load_state_dict(new_state_dict) 
+    best_teacher.load_state_dict(new_state_dict) 
     
     # Check if multiple GPUs are available and set up DataParallel if necessary
     is_multi_gpus = len(args.gpus.split(',')) > 1
     if is_multi_gpus:
-        best_teacher_model = nn.DataParallel(best_teacher_model,
+        best_teacher = nn.DataParallel(best_teacher,
                                 device_ids=list(map(int, args.gpus.split(','))))  # Wrap model in DataParallel
         
     # Compile the model for optimization (if needed)
-    best_teacher_model = torch.compile(best_teacher_model, mode='default')
-    
-    best_teacher_model = best_teacher_model.to(device)
+    best_teacher = torch.compile(best_teacher, mode='default')
+    best_teacher = best_teacher.to(device)
     
     # Freeze all parameters
-    for param in best_teacher_model.parameters():
+    for param in best_teacher.parameters():
         param.requires_grad = False
     
     
@@ -536,32 +517,34 @@ def main():
     # Initialize the GradScaler for mixed precision training
     scaler = torch.amp.GradScaler(enabled=args.use_amp)
 
-    train_loss_lst, train_acc_lst, val_loss_lst, val_acc_lst = train(KDstudent,
-                                                                    best_teacher_model, 
-                                                                    2,
-                                                                    0.75,
-                                                                    train_loader,
-                                                                    test_loader, 
-                                                                    epochs=args.epochs, 
-                                                                    criterion=criterion, 
-                                                                    optimizer=optimizer, 
-                                                                    scaler=scaler,
-                                                                    patience=args.patience,
-                                                                    save_best_path=KDstudent_save_best_path,
-                                                                    is_log_result=args.is_log_result,
-                                                                    is_multi_gpus=is_multi_gpus,
-                                                                    use_amp=args.use_amp)
-    
-    free_model(best_teacher_model)
+    train_loss_lst, train_acc_lst, train_cider_lst, val_loss_lst, val_acc_lst, val_cider_lst = train(KDstudent,
+                                                                                                     best_teacher, 
+                                                                                                     2,
+                                                                                                     0.75,
+                                                                                                     train_loader,
+                                                                                                     test_loader, 
+                                                                                                     epochs=args.epochs, 
+                                                                                                     criterion=criterion, 
+                                                                                                     optimizer=optimizer, 
+                                                                                                     scaler=scaler,
+                                                                                                     dataset_name=args.dataset_name, 
+                                                                                                     idx2label=idx2label,
+                                                                                                     patience=args.patience,
+                                                                                                     save_best_path=KDstudent_save_best_path,
+                                                                                                     is_log_result=args.is_log_result,
+                                                                                                     is_multi_gpus=is_multi_gpus,
+                                                                                                     use_amp=args.use_amp)
+                                    
+    free_model(best_teacher)
     free_vram(KDstudent, optimizer, scaler)
     
-    best_KDstudent_model = student_ViVQAModel(projection_dim=args.projection_dim,
-                                            hidden_dim=args.hidden_dim,
-                                            answer_space_len=answer_space_len,
-                                            text_encoder_dict=text_encoder_dict, 
-                                            img_encoder_dict=img_encoder_dict,
-                                            is_text_augment=False, 
-                                            is_img_augment=False)
+    best_KDstudent = student_ViVQAModel(projection_dim=args.projection_dim,
+                                        hidden_dim=args.hidden_dim,
+                                        answer_space_len=answer_space_len,
+                                        text_encoder_dict=text_encoder_dict, 
+                                        img_encoder_dict=img_encoder_dict,
+                                        is_text_augment=False, 
+                                        is_img_augment=False).to(device)
     
     # Load the best model's state from the saved checkpoint
     dev = torch.cuda.current_device()  # Get current CUDA device
@@ -570,27 +553,34 @@ def main():
                         map_location = lambda storage, loc: storage.cuda(dev))
     
     # Load the model state
-    best_KDstudent_model.load_state_dict(checkpoint['model']) 
+    best_KDstudent.load_state_dict(checkpoint['model']) 
     
-    KDstudent_test_loss, KDstudent_test_acc = evaluate(model=best_KDstudent_model,
+    KDstudent_test_loss, KDstudent_test_acc = evaluate(model=best_KDstudent,
                                                         val_loader=test_loader,
-                                                        criterion=criterion)
+                                                        criterion=criterion,
+                                                        idx2label=idx2label,
+                                                        dataset_name=args.dataset_name)
     
-    KDstudent_test_loss, KDstudent_test_acc = round(KDstudent_test_loss, 4), round(KDstudent_test_acc, 4)
+    KDstudent_test_loss, KDstudent_test_acc, KDstudent_test_cider = round(KDstudent_test_loss, 4), round(KDstudent_test_acc, 4)
 
-    print(f'Test loss: {KDstudent_test_loss}\tTest acc: {KDstudent_test_acc}')
+    test_loss = round(KDstudent_test_loss, 4)
+    test_acc = round(KDstudent_test_acc, 4) if KDstudent_test_acc > 0 else KDstudent_test_acc 
+    test_cider = round(KDstudent_test_cider, 4) if KDstudent_test_cider > 0 else KDstudent_test_cider
     
-    free_model(best_KDstudent_model)
+    free_model(best_KDstudent)
     
     args_dict = vars(args)  # Convert arguments to a dictionary for logging
 
-    exp_table = wandb.Table(
-        columns=list(args_dict.keys()) + ['test_loss', 'test_acc'], 
-        data=[list(args_dict.values()) + [KDstudent_test_loss, KDstudent_test_acc]]
-    )
-    wandb.log({"Exp_table": exp_table})
+    # Log the test results to wandb if enabled
+    if args.is_log_result:
+        exp_table = wandb.Table(
+            columns=list(args_dict.keys()) + ['test_loss', 'test_acc', 'test_cider'], 
+            data=[list(args_dict.values()) + [test_loss, test_acc, test_cider]]
+        )
+        wandb.log({"Exp_table": exp_table})  # Log the experiment results
 
-    print(f'Test loss: {KDstudent_test_loss}\tTest acc: {KDstudent_test_acc}')
+    # Print the final test results
+    print(f'Test loss: {test_loss}\tTest acc: {test_acc}\tTest cider: {test_cider}')
 
 
 if __name__ == '__main__':
