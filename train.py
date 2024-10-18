@@ -1,8 +1,8 @@
 import os
 
 # Set environment variables for CUDA devices and world size for distributed training
-os.environ["CUDA_VISIBLE_DEVICES"] = '1,2'  # Server GPUs indices 
-os.environ["WORLD_SIZE"] = '2'  # Amount of used GPUs
+os.environ["CUDA_VISIBLE_DEVICES"] = '3,0'
+os.environ["WORLD_SIZE"] = '2'
 
 # Load environment variables from a .env file
 from dotenv import load_dotenv
@@ -114,6 +114,181 @@ def free_vram(model, optimizer, scaler):
     torch.cuda.empty_cache()
 
 
+# def train(model, 
+#           train_loader, 
+#           val_loader, 
+#           epochs, 
+#           criterion, 
+#           optimizer, 
+#           scaler,
+#           dataset_name,  
+#           idx2label, 
+#           patience=5,
+#           save_best_path='./weights/best.pt',
+#           is_log_result=True,
+#           is_multi_gpus=True,
+#           use_amp=True):
+    
+#     """
+#     Train the model with the specified parameters and evaluate on validation set.
+    
+#     Parameters:
+#     - model: nn.Module, the model to train
+#     - train_loader: DataLoader, DataLoader for training dataset
+#     - val_loader: DataLoader, DataLoader for validation dataset
+#     - epochs: int, number of epochs to train
+#     - criterion: loss function, to calculate loss
+#     - optimizer: optimizer, to update model weights
+#     - scaler: scaler, for mixed precision training
+#     - dataset_name: str, dataset name to determine evaluation metric (accuracy or CIDEr)
+#     - idx2label: dict, mapping of index to label for text-based evaluation (for CIDEr)
+#     - patience: int, number of epochs to wait for improvement before early stopping
+#     - save_best_path: str, path to save the best model
+#     - is_log_result: bool, whether to log results to Weights and Biases
+#     - is_multi_gpus: bool, whether to use multiple GPUs
+#     - use_amp: bool, whether to use automatic mixed precision
+
+#     Returns:
+#     - train_loss_lst: list, training losses for each epoch
+#     - train_acc_lst: list, training accuracies (None for `openvivqa`)
+#     - train_cider_lst: list, training CIDEr scores (None for non-`openvivqa`)
+#     - val_loss_lst: list, validation losses for each epoch
+#     - val_acc_lst: list, validation accuracies (None for `openvivqa`)
+#     - val_cider_lst: list, validation CIDEr scores (None for non-`openvivqa`)
+#     """
+    
+#     best_val_metric = -np.inf  # Initialize the best validation metric (CIDEr or accuracy)
+#     epochs_no_improve = 0  # Counter for epochs without improvement
+    
+#     train_loss_lst = []
+#     train_acc_lst = []  
+#     train_cider_lst = []  
+#     val_loss_lst = []
+#     val_acc_lst = []  
+#     val_cider_lst = []  
+
+#     for epoch in range(epochs):
+#         if is_multi_gpus:
+#             model.module.update_epoch(epoch)  # Update epoch for DataParallel model
+#         else:
+#             model.update_epoch(epoch)  # Update epoch for single GPU model
+            
+#         total_correct = 0
+#         total_loss = 0
+#         total_samples = 0
+#         all_predictions = [] 
+#         all_references = []   
+
+#         # Progress bar for training batches
+#         epoch_iterator = tqdm(train_loader, 
+#                               desc=f'Epoch {epoch + 1}/{epochs}', 
+#                               unit='batch')
+        
+#         model.train()  # Set model to training mode
+#         for batch in epoch_iterator:
+#             # Extract data from batch
+#             text_inputs_lst = batch.pop('text_inputs_lst')
+#             img_inputs_lst = batch.pop('img_inputs')
+#             labels = batch.pop('labels')
+            
+#             # Move inputs to device
+#             text_inputs_lst = [
+#                 {k: v.squeeze().to(device, non_blocking=True) for k, v in input_ids.items()} \
+#                     for input_ids in text_inputs_lst]
+#             img_inputs_lst = [inputs.to(device, non_blocking=True) for inputs in img_inputs_lst]
+#             labels = labels.to(device, non_blocking=True)
+
+#             # Forward pass with mixed precision
+#             with torch.autocast(device_type=device, dtype=torch.float16, enabled=use_amp):
+#                 logits = model(text_inputs_lst, img_inputs_lst)
+#                 loss = criterion(logits, labels)
+
+#             _, preds = torch.max(logits, 1)
+
+#             total_batch_samples = labels.size(0)
+#             batch_loss_sum = loss.item() * total_batch_samples
+
+#             total_samples += total_batch_samples
+#             total_loss += batch_loss_sum
+
+#             if dataset_name == 'openvivqa':
+#                 pred_texts = [idx2label[pred.item()] for pred in preds]
+#                 label_texts = [idx2label[label.item()] for label in labels]
+
+#                 all_predictions += pred_texts
+#                 all_references += label_texts
+#             else: 
+#                 correct = (preds == labels).sum().item()
+#                 total_correct += correct
+
+#             # Backward pass and optimization
+#             scaler.scale(loss).backward()
+#             scaler.step(optimizer)
+#             scaler.update()
+#             optimizer.zero_grad() 
+
+#             epoch_iterator.set_postfix({'Batch Loss': loss.item()})  # Update progress bar
+
+#         val_loss, val_acc, val_cider = evaluate(model=model, 
+#                                                 val_loader=val_loader, 
+#                                                 criterion=criterion, 
+#                                                 idx2label=idx2label, 
+#                                                 dataset_name=dataset_name)
+
+#         # Compute average training loss, accuracy, and CIDEr
+#         train_loss = total_loss / total_samples
+
+#         # Print the progress for the current epoch
+#         print(f'EPOCH {epoch + 1}: Train loss: {train_loss:.4f}\tVal loss: {val_loss:.4f}')
+
+#         if dataset_name == 'openvivqa':
+#             train_acc = -1 
+#             train_cider = compute_cider(all_predictions, all_references)
+#             val_metric = val_cider
+#             print(f'Train CIDEr: {train_cider:.4f}\tVal CIDEr: {val_cider:.4f}')
+#         else:
+#             train_acc = total_correct / total_samples
+#             train_cider = -1
+#             val_metric = val_acc
+#             print(f'Train acc: {train_acc:.4f}\tVal acc: {val_acc:.4f}')
+
+#         print(f'val_metric: {val_metric}')
+
+#         # Append to lists
+#         train_loss_lst.append(train_loss)
+#         train_acc_lst.append(train_acc)
+#         train_cider_lst.append(train_cider)
+#         val_loss_lst.append(val_loss)
+#         val_acc_lst.append(val_acc)
+#         val_cider_lst.append(val_cider)
+
+#         # Log results to Weights and Biases
+#         if is_log_result:
+#             log_data = {
+#                 'epoch': epoch + 1,
+#                 'train_loss': train_loss,
+#                 'train_acc': train_acc,
+#                 'train_cider': train_cider,
+#                 'val_loss': val_loss,
+#                 'val_acc': val_acc,
+#                 'val_cider': val_cider
+#             }
+
+#             wandb.log(log_data)
+
+#         if val_metric > best_val_metric:
+#             best_val_metric = val_metric
+#             epochs_no_improve = 0  # Reset no improvement counter
+#             save_model(save_best_path, model, optimizer, scaler)  # Save the best model
+#         else:
+#             epochs_no_improve += 1
+#             if epochs_no_improve >= patience:  # Early stopping condition
+#                 print(f'Early stopping triggered after {epochs_no_improve} epochs without improvement.')
+#                 break  # Exit training loop
+
+#     return train_loss_lst, train_acc_lst, train_cider_lst, val_loss_lst, val_acc_lst, val_cider_lst
+
+
 def train(model, 
           train_loader, 
           val_loader, 
@@ -157,7 +332,7 @@ def train(model,
     - val_cider_lst: list, validation CIDEr scores (None for non-`openvivqa`)
     """
     
-    best_val_metric = -np.inf  # Initialize the best validation metric (CIDEr or accuracy)
+    best_val_loss = np.inf  # Initialize the best validation loss
     epochs_no_improve = 0  # Counter for epochs without improvement
     
     train_loss_lst = []
@@ -244,15 +419,11 @@ def train(model,
         if dataset_name == 'openvivqa':
             train_acc = -1 
             train_cider = compute_cider(all_predictions, all_references)
-            val_metric = val_cider
             print(f'Train CIDEr: {train_cider:.4f}\tVal CIDEr: {val_cider:.4f}')
         else:
             train_acc = total_correct / total_samples
             train_cider = -1
-            val_metric = val_acc
             print(f'Train acc: {train_acc:.4f}\tVal acc: {val_acc:.4f}')
-
-        print(f'val_metric: {val_metric}')
 
         # Append to lists
         train_loss_lst.append(train_loss)
@@ -276,8 +447,8 @@ def train(model,
 
             wandb.log(log_data)
 
-        if val_metric > best_val_metric:
-            best_val_metric = val_metric
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
             epochs_no_improve = 0  # Reset no improvement counter
             save_model(save_best_path, model, optimizer, scaler)  # Save the best model
         else:
