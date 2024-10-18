@@ -33,6 +33,7 @@ from text_encoder import load_text_encoder
 from img_encoder import load_img_encoder
 from kd_vqa_model import ViVQAModel  # Note changes to suit your method!!! 
 from utils import get_label_encoder
+from eval import evaluate, compute_accuracy, compute_cider
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -138,54 +139,6 @@ def compute_accuracy(logits, labels):
     return accuracy
 
 
-def evaluate(model, val_loader, criterion): 
-    """
-    Evaluate the model on the validation dataset.
-    
-    Parameters:
-    - model: nn.Module, the model to evaluate
-    - val_loader: DataLoader, DataLoader for validation dataset
-    - criterion: loss function, to calculate loss
-    
-    Returns:
-    - eval_loss: float, average validation loss
-    - eval_acc: float, average validation accuracy
-    """
-    
-    model.eval()  # Set model to evaluation mode
-    eval_losses = []
-    eval_accs = []
-    with torch.no_grad():
-        for idx, batch in enumerate(val_loader):
-            # Extract data from batch
-            text_inputs_lst = batch.pop('text_inputs_lst')
-            img_inputs_lst = batch.pop('img_inputs')
-            labels = batch.pop('labels')
-
-            # Move inputs to device
-            text_inputs_lst = [
-                {k: v.squeeze().to(device, non_blocking=True) for k, v in input_ids.items()} \
-                    for input_ids in text_inputs_lst]
-            img_inputs_lst = [inputs.to(device, non_blocking=True) for inputs in img_inputs_lst]
-            labels = labels.to(device, non_blocking=True)
-            
-            # Forward pass
-            logits = model(text_inputs_lst, img_inputs_lst)
-
-            # Calculate loss and accuracy
-            loss = criterion(logits, labels)
-            acc = compute_accuracy(logits, labels)
-
-            eval_losses.append(loss.item())
-            eval_accs.append(acc)
-
-    # Compute average evaluation loss and accuracy
-    eval_loss = sum(eval_losses) / len(eval_losses)
-    eval_acc = sum(eval_accs) / len(eval_accs)
-
-    return eval_loss, eval_acc
-
-
 def train(model, 
           train_loader, 
           val_loader, 
@@ -193,6 +146,8 @@ def train(model,
           criterion, 
           optimizer, 
           scaler,
+          dataset_name, 
+          idx2label, 
           patience=5,
           save_best_path='./weights/best.pt',
           is_log_result=True,
@@ -210,6 +165,8 @@ def train(model,
     - criterion: loss function, to calculate loss
     - optimizer: optimizer, to update model weights
     - scaler: scaler, for mixed precision training
+    - dataset_name: str, dataset name to determine evaluation metric (accuracy or CIDEr)
+    - idx2label: dict, mapping of index to label for text-based evaluation (for CIDEr)
     - patience: int, number of epochs to wait for improvement before early stopping
     - save_best_path: str, path to save the best model
     - is_log_result: bool, whether to log results to Weights and Biases
@@ -218,22 +175,29 @@ def train(model,
 
     Returns:
     - train_loss_lst: list, training losses for each epoch
-    - train_acc_lst: list, training accuracies for each epoch
+    - train_acc_lst: list, training accuracies (None for `openvivqa`)
+    - train_cider_lst: list, training CIDEr scores (None for non-`openvivqa`)
     - val_loss_lst: list, validation losses for each epoch
-    - val_acc_lst: list, validation accuracies for each epoch
+    - val_acc_lst: list, validation accuracies (None for `openvivqa`)
+    - val_cider_lst: list, validation CIDEr scores (None for non-`openvivqa`)
     """
     
     best_val_loss = np.inf  # Initialize the best validation loss
     epochs_no_improve = 0  # Counter for epochs without improvement
     
     train_loss_lst = []
-    train_acc_lst = []
+    train_acc_lst = []  
+    train_cider_lst = []  
     val_loss_lst = []
-    val_acc_lst = []
+    val_acc_lst = []  
+    val_cider_lst = []  
     
     for epoch in range(epochs):
-        train_batch_loss_lst = []
-        train_batch_acc_lst = []
+        total_correct = 0
+        total_loss = 0
+        total_samples = 0
+        all_predictions = [] 
+        all_references = []  
 
         # Progress bar for training batches
         epoch_iterator = tqdm(train_loader, 
@@ -259,10 +223,23 @@ def train(model,
                 logits = model(text_inputs_lst, img_inputs_lst)
                 loss = criterion(logits, labels)
 
-            acc = compute_accuracy(logits, labels)
+            _, preds = torch.max(logits, 1)
 
-            train_batch_loss_lst.append(loss.item())
-            train_batch_acc_lst.append(acc)
+            total_batch_samples = labels.size(0)
+            batch_loss_sum = loss.item() * total_batch_samples
+            
+            total_samples += total_batch_samples
+            total_loss += batch_loss_sum
+
+            if dataset_name == 'openvivqa':
+                pred_texts = [idx2label[pred.item()] for pred in preds]
+                label_texts = [idx2label[label.item()] for label in labels]
+
+                all_predictions += pred_texts
+                all_references += label_texts
+            else: 
+                correct = (preds == labels).sum().item()
+                total_correct += correct
 
             # Backward pass and optimization
             scaler.scale(loss).backward()
@@ -273,49 +250,67 @@ def train(model,
             epoch_iterator.set_postfix({'Batch Loss': loss.item()})  # Update progress bar
 
         # Evaluate on validation set
-        val_loss, val_acc = evaluate(model,
-                                     val_loader,
-                                     criterion)
+        val_loss, val_acc, val_cider = evaluate(model=model, 
+                                                val_loader=val_loader, 
+                                                criterion=criterion, 
+                                                idx2label=idx2label, 
+                                                dataset_name=dataset_name)
 
-        # Compute average training loss and accuracy
-        train_loss = sum(train_batch_loss_lst) / len(train_batch_loss_lst)
-        train_acc = sum(train_batch_acc_lst) / len(train_batch_acc_lst)
+        # Compute average training loss, accuracy, and CIDEr
+        train_loss = total_loss / total_samples
+        
+        # Print the progress for the current epoch
+        print(f'EPOCH {epoch + 1}: Train loss: {train_loss:.4f}\tVal loss: {val_loss:.4f}')
 
+        if dataset_name == 'openvivqa':
+            train_acc = -1 
+            train_cider = compute_cider(all_predictions, all_references)
+            print(f'Train CIDEr: {train_cider:.4f}\tVal CIDEr: {val_cider:.4f}')
+        else:
+            train_acc = total_correct / total_samples
+            train_cider = -1
+            print(f'Train acc: {train_acc:.4f}\tVal acc: {val_acc:.4f}')
+
+        # Append to lists
         train_loss_lst.append(train_loss)
         train_acc_lst.append(train_acc)
+        train_cider_lst.append(train_cider)
         val_loss_lst.append(val_loss)
         val_acc_lst.append(val_acc)
-
+        val_cider_lst.append(val_cider)
+        
         # Log results to Weights and Biases
-        wandb.log({
-            'epoch': epoch + 1,
-            'train_loss': train_loss,
-            'train_acc': train_acc,
-            'val_loss': val_loss,
-            'val_acc': val_acc
-        })
-
-        print(f'EPOCH {epoch + 1}: Train loss: {train_loss:.4f}\tTrain acc: {train_acc:.4f}\tVal loss: {val_loss:.4f}\tVal acc: {val_acc:.4f}')
-
-        # Check for early stopping
+        if is_log_result:
+            log_data = {
+                'epoch': epoch + 1,
+                'train_loss': train_loss,
+                'train_acc': train_acc,
+                'train_cider': train_cider,
+                'val_loss': val_loss,
+                'val_acc': val_acc,
+                'val_cider': val_cider
+            }
+            wandb.log(log_data)
+        
+        
         if val_loss < best_val_loss:
-            best_val_loss = val_loss  # Update best validation loss
+            best_val_loss = val_loss
             epochs_no_improve = 0  # Reset no improvement counter
             save_model(save_best_path, model, optimizer, scaler)  # Save the best model
         else:
-            epochs_no_improve += 1  # Increment counter for no improvement
-            if epochs_no_improve >= patience:  # Check for early stopping condition
+            epochs_no_improve += 1
+            if epochs_no_improve >= patience:  # Early stopping condition
                 print(f'Early stopping triggered after {epochs_no_improve} epochs without improvement.')
-                break  # Exit training loop if condition met
+                break  # Exit training loop
 
-    return train_loss_lst, train_acc_lst, val_loss_lst, val_acc_lst
+    return train_loss_lst, train_acc_lst, train_cider_lst, val_loss_lst, val_acc_lst, val_cider_lst
 
 
 # Function to parse command-line arguments for the training script
 def parse_args():
     parser = argparse.ArgumentParser(description='ViVQA Training Script')
     parser.add_argument('--seed', type=int, default=pipeline_config.seed, help='Random seed')
-    parser.add_argument('--gpus', type=str, default='0', help='Number of GPUs used')
+    parser.add_argument('--gpus', type=str, default='0', help='Indices of GPUs used count from 0')
     parser.add_argument('--project_name', type=str, default='vivqa_paraphrase_augmentation_kd', help='Project name for wandb')
     parser.add_argument('--exp_name', type=str, help='Experiment name for wandb')
     parser.add_argument('--dataset_name', default=pipeline_config.dataset_name, type=str, help='Name of the dataset')
@@ -447,23 +442,25 @@ def main():
     scaler = torch.amp.GradScaler(enabled=args.use_amp)
     
     # Load training dataset
-    train_loss_lst, train_acc_lst, val_loss_lst, val_acc_lst = train(student, 
-                                                                    train_loader, 
-                                                                    test_loader, 
-                                                                    epochs=args.epochs, 
-                                                                    criterion=criterion, 
-                                                                    optimizer=optimizer, 
-                                                                    scaler=scaler,
-                                                                    patience=args.patience,
-                                                                    save_best_path=student_save_best_path,
-                                                                    is_log_result=args.is_log_result,
-                                                                    is_multi_gpus=is_multi_gpus,
-                                                                    use_amp=args.use_amp)
+    train_loss_lst, train_acc_lst, train_cider_lst, val_loss_lst, val_acc_lst, val_cider_lst = train(student, 
+                                                                                                    train_loader, 
+                                                                                                    test_loader, 
+                                                                                                    epochs=args.epochs, 
+                                                                                                    criterion=criterion, 
+                                                                                                    optimizer=optimizer, 
+                                                                                                    scaler=scaler,
+                                                                                                    dataset_name=args.dataset_name, 
+                                                                                                    idx2label=idx2label,
+                                                                                                    patience=args.patience,
+                                                                                                    save_best_path=student_save_best_path,
+                                                                                                    is_log_result=args.is_log_result,
+                                                                                                    is_multi_gpus=is_multi_gpus,
+                                                                                                    use_amp=args.use_amp)
     
     free_vram(student, optimizer, scaler)  # Free VRAM to avoid memory overflow
     
     # Initialize the best model for evaluation
-    best_student_model = ViVQAModel(projection_dim=args.projection_dim,
+    best_student = ViVQAModel(projection_dim=args.projection_dim,
                                     hidden_dim=args.hidden_dim,
                                     answer_space_len=answer_space_len,
                                     text_encoder_dict=text_encoder_dict, 
@@ -478,27 +475,33 @@ def main():
                         map_location = lambda storage, loc: storage.cuda(dev))
     
     # Load the model state
-    best_student_model.load_state_dict(checkpoint['model']) 
+    best_student.load_state_dict(checkpoint['model']) 
     
     # Evaluate the model on the test set
-    student_test_loss, student_test_acc = evaluate(model=best_student_model,
-                                                    val_loader=test_loader,
-                                                    criterion=criterion)
-    
-    student_test_loss, student_test_acc = round(student_test_loss, 4), round(student_test_acc, 4)
+    test_loss, test_acc, test_cider = evaluate(model=best_student,
+                                                val_loader=test_loader,
+                                                criterion=criterion,
+                                                idx2label=idx2label,
+                                                dataset_name=args.dataset_name)
 
-    print(f'Test loss: {student_test_loss}\tTest acc: {student_test_acc}')
-    free_model(best_student_model)
+    test_loss = round(test_loss, 4)
+    test_acc = round(test_acc, 4) if test_acc > 0 else test_acc 
+    test_cider = round(test_cider, 4) if test_cider > 0 else test_cider
+    
+    free_model(best_student)
 
     args_dict = vars(args)  # Convert arguments to a dictionary for logging
 
-    exp_table = wandb.Table(
-        columns=list(args_dict.keys()) + ['test_loss', 'test_acc'], 
-        data=[list(args_dict.values()) + [student_test_loss, student_test_acc]]
-    )
-    wandb.log({"Exp_table": exp_table})
+    # Log the test results to wandb if enabled
+    if args.is_log_result:
+        exp_table = wandb.Table(
+            columns=list(args_dict.keys()) + ['test_loss', 'test_acc', 'test_cider'], 
+            data=[list(args_dict.values()) + [test_loss, test_acc, test_cider]]
+        )
+        wandb.log({"Exp_table": exp_table})  # Log the experiment results
 
-    print(f'Test loss: {student_test_loss}\tTest acc: {student_test_acc}')
+    # Print the final test results
+    print(f'Test loss: {test_loss}\tTest acc: {test_acc}\tTest cider: {test_cider}')
 
 
 if __name__ == '__main__':
