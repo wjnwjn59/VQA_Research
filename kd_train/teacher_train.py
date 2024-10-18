@@ -473,6 +473,14 @@ def main():
                                                                     is_multi_gpus=is_multi_gpus,
                                                                     use_amp=args.use_amp)
     
+    teacher_test_loss, teacher_test_acc = evaluate(model=teacher,
+                                                    val_loader=test_loader,
+                                                    criterion=criterion)
+    
+    teacher_test_loss, teacher_test_acc = round(teacher_test_loss, 4), round(teacher_test_acc, 4)
+
+    print(f'Before | Test loss: {teacher_test_loss}\tTest acc: {teacher_test_acc}')
+    
     free_vram(teacher, optimizer, scaler)  # Free VRAM to avoid memory overflow
 
     # Initialize the best model for evaluation
@@ -500,7 +508,7 @@ def main():
     
     teacher_test_loss, teacher_test_acc = round(teacher_test_loss, 4), round(teacher_test_acc, 4)
 
-    print(f'Test loss: {teacher_test_loss}\tTest acc: {teacher_test_acc}')
+    print(f'After | Test loss: {teacher_test_loss}\tTest acc: {teacher_test_acc}')
     free_model(best_teacher_model)
 
     args_dict = vars(args)  # Convert arguments to a dictionary for logging
