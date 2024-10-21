@@ -15,8 +15,8 @@ class TextEncoder(nn.Module):
             
         self.is_text_augment = is_text_augment  # Flag for augmenting text data
         self.model = text_model  # Text model
+        # self.layer_norm = nn.LayerNorm(self.model.config.hidden_size)
         self.linear = nn.Linear(self.model.config.hidden_size, projection_dim)
-
 
     def forward(self, text_inputs_lst, augment_thresh):
         r = torch.rand(1)  # Generate a random value to decide if augmentation should be applied
@@ -30,6 +30,7 @@ class TextEncoder(nn.Module):
             # Stack embeddings and sum them for augmented inputs
             para_features_t = torch.stack(embed_lst, dim=1)
             x = torch.sum(para_features_t, dim=1)  # Sum the embeddings along the new dimension
+            # x = self.layer_norm(x)
         else:
             # Process a single text input if no augmentation is applied
             text_inputs = text_inputs_lst[0]
