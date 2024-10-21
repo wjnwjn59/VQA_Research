@@ -25,6 +25,6 @@ class PipelineConfig:
         self.dataset_name = 'vivqa'
         self.data_dir = "/home/VLAI/datasets"
         self.use_amp = True
-        self.pretrained_teacher_path = '/home/VLAI/khoina/VQA_Research/runs/train/weights_20241008-210436/Teacher_seed59_vivqa_currTrue&0.6_istextaugTrue_ntextpara1_random0.6_nparapool30_isimgaugFalse_nimgaug1_random0_teacher_best.pt'
+        self.pretrained_teacher_path = '/home/VLAI/khoina/VQA_Research/runs/train/weights_20241019-124853/Teacher_seed59_vivqa_currFalse&0.6_istextaugTrue_ntextpara1_random0.6_nparapool30_isimgaugTrue_nimgaug1_random0.2_teacher_best.pt'
 
 pipeline_config = PipelineConfig()

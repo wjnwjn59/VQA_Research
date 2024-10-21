@@ -57,6 +57,8 @@ class ViVQADataset(Dataset):
                 print('Data training file with number of paraphrases pool not found! Select default (20) file.')
                 data_path = os.path.join(data_dir, 'ViVQA', '20_paraphrases_train.csv')
             self.data_path = data_path
+            
+            self.aug_imgs_rootpath = os.path.join(data_dir, 'ViVQA', 'aug_imgs_unique')
         else:
             self.data_path = os.path.join(data_dir, 'ViVQA', 'test.csv')
         
@@ -67,7 +69,7 @@ class ViVQADataset(Dataset):
         self.device = device
 
         # Load data from the specified CSV file
-        self.questions, self.para_questions, self.img_paths, self.answers = self.get_data()
+        self.questions, self.para_questions, self.img_paths, self.img_ids, self.answers = self.get_data()
         self.label_encoder = label_encoder
 
     def get_data(self):
@@ -86,6 +88,7 @@ class ViVQADataset(Dataset):
         para_questions = []
         answers = []
         img_paths = []
+        img_ids = []
 
         # Iterate through the rows in the DataFrame to extract data
         for idx, row in df.iterrows():
@@ -99,6 +102,9 @@ class ViVQADataset(Dataset):
                 question_paraphrases = row['question_paraphrase']
                 para_questions.append(question_paraphrases)
 
+            # To retrieve the augmented images
+            img_ids.append(img_id)
+            
             # Construct the image file name and path
             img_name = f'{img_id:012}.jpg'
             img_path = os.path.join(self.img_dirpath, img_name)
@@ -108,7 +114,7 @@ class ViVQADataset(Dataset):
             answers.append(answer)
             img_paths.append(img_path)
 
-        return questions, para_questions, img_paths, answers 
+        return questions, para_questions, img_paths, img_ids, answers 
 
     def __getitem__(self, idx):
         """
@@ -124,6 +130,7 @@ class ViVQADataset(Dataset):
         questions = self.questions[idx]
         answers = self.answers[idx]
         img_paths = self.img_paths[idx]
+        img_ids = self.img_ids[idx]
 
         # Open and preprocess the image
         img_pils = Image.open(img_paths).convert('RGB')
@@ -136,10 +143,11 @@ class ViVQADataset(Dataset):
         r = random.random()
         # Apply image augmentation if in training mode
         if self.data_mode == 'train' and self.is_img_augment:
-            augmented_imgs_pil = augment_image(img_pils, self.n_img_augments)
+            aug_imgs_path = os.path.join(self.aug_imgs_rootpath, img_ids)
+            augmented_imgs_pil = augment_image(aug_imgs_path)
             # Process augmented images
             augmented_imgs = [self.img_encoder_dict['img_processor'](img).to(self.device) for img in augmented_imgs_pil]
-
+            
             # Determine if paraphrase features should be fused based on random threshold
             if r < self.img_augment_thresh:
                 is_fuse_para_t = torch.ones(self.img_encoder_dict['features_dim']).to(self.device)

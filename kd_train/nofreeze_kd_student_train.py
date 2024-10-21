@@ -182,7 +182,7 @@ def train(student,
     - val_cider_lst: list, validation CIDEr scores (None for non-`openvivqa`)
     """
     
-    teacher.eval()  # Used for inference
+    teacher.train()  # Used for inference
     student.train()  # Train Student only
     
     best_val_loss = np.inf  # Initialize the best validation loss
@@ -225,8 +225,7 @@ def train(student,
             # Forward pass with mixed precision and no_grad
             with torch.autocast(device_type=device, dtype=torch.float16, enabled=use_amp):
                 student_logits, student_kd_logits = student(text_inputs_lst, img_inputs_lst)
-                with torch.no_grad():
-                    teacher_logits, teacher_kd_logits = teacher(text_inputs_lst, img_inputs_lst) 
+                teacher_logits, teacher_kd_logits = teacher(text_inputs_lst, img_inputs_lst) 
                     
             ################# Knowledge Distillation
             # soft_targets = nn.functional.softmax(teacher_logits / T, dim=-1)
@@ -418,9 +417,9 @@ def main():
     
     # Generate experiment name for logging
     if not args.exp_name:
-        teacher_name = f'FrozenTeacher{args.pretrained_teacher_path.split("/")[-2]}'
+        teacher_name = f'NoFreezeTeacher{args.pretrained_teacher_path.split("/")[-2]}'
         print(teacher_name)
-        exp_name = f'Cosine_Student_seed{args.seed}_{args.dataset_name}_nocurr_noaugs_{teacher_name}'
+        exp_name = f'Cosine_KD_Student_seed{args.seed}_{args.dataset_name}_nocurr_noaugs_{teacher_name}'
     else:
         exp_name = args.exp_name
     
@@ -477,14 +476,9 @@ def main():
     best_teacher = torch.compile(best_teacher, mode='default')
     best_teacher = best_teacher.to(device)
     
-    # Freeze all parameters
-    for param in best_teacher.parameters():
-        param.requires_grad = False
-    
-    
     
     ##### Student Model with KD
-    print("Training KD Student Model:")
+    print("Training KD Student and Teacher Model:")
     KDstudent_save_best_path = f'./{weights_dirname}/{exp_name}_kdstudent_best.pt'
     
     KDstudent = student_ViVQAModel(projection_dim=args.projection_dim,
@@ -507,9 +501,9 @@ def main():
     KDstudent = KDstudent.to(device)
     
     # Set up the optimizer   
-    optimizer = torch.optim.AdamW(KDstudent.parameters(),
-                                    lr=args.learning_rate,
-                                    weight_decay=args.weight_decay)
+    optimizer = torch.optim.AdamW(list(KDstudent.parameters()) + list(best_teacher.parameters()),
+                                lr=args.learning_rate,
+                                weight_decay=args.weight_decay)
     
     # Set up the loss function
     criterion = nn.CrossEntropyLoss()
@@ -535,6 +529,18 @@ def main():
                                                                                                      is_multi_gpus=is_multi_gpus,
                                                                                                      use_amp=args.use_amp)
                                     
+    teacher_test_loss, teacher_test_acc, teacher_test_cider = evaluate(model=best_teacher,
+                                                                        val_loader=test_loader,
+                                                                        criterion=criterion,
+                                                                        idx2label=idx2label,
+                                                                        dataset_name=args.dataset_name)
+    
+    test_loss = round(teacher_test_loss, 4)
+    test_acc = round(teacher_test_acc, 4) if teacher_test_acc > 0 else teacher_test_acc 
+    test_cider = round(teacher_test_cider, 4) if teacher_test_cider > 0 else teacher_test_cider    
+    
+    print(f'Teacher after train: Test loss: {test_loss}\tTest acc: {test_acc}\tTest cider: {test_cider}')
+                                         
     free_model(best_teacher)
     free_vram(KDstudent, optimizer, scaler)
     
@@ -552,6 +558,7 @@ def main():
                         weights_only=True,
                         map_location = lambda storage, loc: storage.cuda(dev))
     
+    
     # Remove prefix _orig_mod.
     state_dict = checkpoint['model']
     new_state_dict = {}
@@ -567,7 +574,7 @@ def main():
                                                                             criterion=criterion,
                                                                             idx2label=idx2label,
                                                                             dataset_name=args.dataset_name)
-    
+
     test_loss = round(KDstudent_test_loss, 4)
     test_acc = round(KDstudent_test_acc, 4) if KDstudent_test_acc > 0 else KDstudent_test_acc 
     test_cider = round(KDstudent_test_cider, 4) if KDstudent_test_cider > 0 else KDstudent_test_cider
