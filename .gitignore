@@ -168,5 +168,4 @@ models/VnCoreNLP/*.jar
 weights*
 runs
 
-kd
-barlow_twins
+notebooks
