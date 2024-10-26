@@ -1,8 +1,8 @@
 import os
 
 # Set environment variables for CUDA devices and world size for distributed training
-os.environ["CUDA_VISIBLE_DEVICES"] = '3,1'
-os.environ["WORLD_SIZE"] = '2'
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["WORLD_SIZE"] = '1'
 
 # Load environment variables from a .env file
 from dotenv import load_dotenv
@@ -26,7 +26,7 @@ from config import pipeline_config
 from vqa_datasets import get_dataset
 from text_encoder import load_text_encoder
 from img_encoder import load_img_encoder
-from scheduler_vqa_model import ViVQAModel
+from lightweight_vqa_model import ViVQAModel
 from utils import get_label_encoder
 from eval import evaluate, compute_accuracy, compute_cider
 
@@ -112,7 +112,7 @@ def free_vram(model, optimizer, scaler):
     del optimizer
     del scaler
     torch.cuda.empty_cache()
-    
+
 
 def train(model, 
           train_loader, 
@@ -289,7 +289,7 @@ def train(model,
 def parse_args():
     parser = argparse.ArgumentParser(description='ViVQA Training Script')
     parser.add_argument('--seed', type=int, default=pipeline_config.seed, help='Random seed')
-    parser.add_argument('--gpus', type=str, default='0,1', help='Indices of GPUs used count from 0')
+    parser.add_argument('--gpus', type=str, default='0', help='Indices of GPUs used count from 0')
     parser.add_argument('--project_name', type=str, default='vivqa_paraphrase_augmentation', help='Project name for wandb')
     parser.add_argument('--exp_name', type=str, help='Experiment name for wandb')
     parser.add_argument('--dataset_name', default=pipeline_config.dataset_name, type=str, help='Name of the dataset')
@@ -411,7 +411,7 @@ def main():
         # text_augment_info = f'istextaug{args.is_text_augment}'
         # img_augment_info = f'isimgaug{args.is_img_augment}'
         #exp_name = f'phase6_seed{args.seed}_{args.dataset_name}_curr{args.use_dynamic_thresh}&0.6_{text_augment_info}_{img_augment_info}'
-        exp_name = f'phase5_seed{args.seed}_{args.dataset_name}_{text_augment_info}_{img_augment_info}'
+        exp_name = f'phase6_seed{args.seed}_{args.dataset_name}_{text_augment_info}_{img_augment_info}'
         #exp_name = f'norm_seed{args.seed}_{args.dataset_name}_{text_augment_info}'
     else:
         exp_name = args.exp_name
@@ -454,8 +454,8 @@ def main():
                             answer_space_len=answer_space_len,
                             text_encoder_dict=text_encoder_dict, 
                             img_encoder_dict=img_encoder_dict,
-                            is_text_augment=False, 
-                            is_img_augment=False).to(device)
+                            is_text_augment=args.is_text_augment, 
+                            is_img_augment=args.is_img_augment).to(device)
 
     # Load the best model's state from the saved checkpoint
     dev = torch.cuda.current_device()  # Get current CUDA device
@@ -463,7 +463,8 @@ def main():
                             weights_only=True,
                             map_location = lambda storage, loc: storage.cuda(dev))
 
-    best_model.load_state_dict(checkpoint['model'])  # Load the model state
+    best_model.load_state_dict(checkpoint['model'], 
+                               strict=False)  # Load the model state
 
     # Evaluate the model on the test set
     test_loss, test_acc, test_cider = evaluate(model=best_model,

@@ -102,7 +102,6 @@ class ImageEncoder(nn.Module):
 class Classifier(nn.Module):
     def __init__(self, projection_dim, hidden_dim, answer_space):
         super().__init__()
-        # Bottleneck with ReLU and reduced dimensions
         self.fc = nn.Linear(projection_dim * 2, hidden_dim)
         self.dropout = nn.Dropout(0.2)  
         self.classifier = nn.Linear(hidden_dim, answer_space)  # Final classification layer
@@ -115,7 +114,6 @@ class Classifier(nn.Module):
         x = self.classifier(x)
 
         return x
-
 
 
 # Main model class combining text, image encoders, and classifier for VQA (Visual Question Answering)
