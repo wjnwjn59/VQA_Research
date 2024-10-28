@@ -15,17 +15,17 @@ class TextEncoder(nn.Module):
             
         self.is_text_augment = is_text_augment  # Flag for augmenting text data
         self.model = text_model  # Text model
-        self.norm = nn.LayerNorm(self.model.config.hidden_size)
+        self.norm = nn.LayerNorm(projection_dim)
+
+        self.projection = nn.Linear(self.model.config.hidden_size, projection_dim)
 
         # Bottleneck structure for augment_linear
         if self.is_text_augment:
             self.augment_linear = nn.Sequential(
-                nn.Linear(self.model.config.hidden_size, self.model.config.hidden_size // 2),  # Bottleneck layer
+                nn.Linear(projection_dim, projection_dim // 2),  # Bottleneck layer
                 nn.ReLU(),  # Non-linearity (ReLU for lightweight performance)
-                nn.Linear(self.model.config.hidden_size // 2, self.model.config.hidden_size)  # Expand back to original dimension
+                nn.Linear(projection_dim // 2, projection_dim),  # Expand back to original dimension
             )
-
-        self.linear = nn.Linear(self.model.config.hidden_size, projection_dim)
 
     def forward(self, text_inputs_lst, augment_thresh):
         r = torch.rand(1)  # Generate a random value to decide if augmentation should be applied
@@ -39,15 +39,19 @@ class TextEncoder(nn.Module):
             # Stack embeddings and sum them for augmented inputs
             para_features_t = torch.stack(embed_lst, dim=1)
             x = torch.sum(para_features_t, dim=1)  # Sum the embeddings along the new dimension
+
+            x = self.projection(x) 
+            x = F.relu(x)
+            x = self.augment_linear(x) 
+
         else:
             # Process a single text input if no augmentation is applied
             text_inputs = text_inputs_lst[0]
             x = self.model(**text_inputs)  # Forward pass through the text model
             x = x['last_hidden_state'][:, 0, :]  # Extract the embedding of the [CLS] token
 
-        # Apply linear transformation and ReLU activation
-        x = self.linear(x) 
-        x = F.relu(x)
+            x = self.projection(x) 
+            x = F.relu(x)
 
         return x
 
@@ -63,16 +67,16 @@ class ImageEncoder(nn.Module):
         self.is_img_augment = is_img_augment  # Flag for image augmentation
         self.model = img_model  # Image model
 
+        # Linear projection for flattened features
+        self.projection = nn.Linear(self.model.num_features * 7 * 7, projection_dim)
+
         # Bottleneck structure for 
         if self.is_img_augment:
             self.augment_linear = nn.Sequential(
-                nn.Linear(self.model.num_features * 7 * 7, self.model.num_features * 7 * 7 // 2),  # Bottleneck layer
-                nn.ReLU(),  # Non-linearity (ReLU for lightweight performance)
-                nn.Linear(self.model.num_features * 7 * 7 // 2, self.model.num_features * 7 * 7)  # Expand back to original dimension
+                nn.Linear(projection_dim, projection_dim // 2),  # Bottleneck layer
+                nn.ReLU(),  
+                nn.Linear(projection_dim // 2, projection_dim)  # Expand back to original dimension
             )
-
-        # Linear projection for flattened features
-        self.linear = nn.Linear(self.model.num_features * 7 * 7, projection_dim)
 
     def forward(self, img_inputs_lst, augment_thresh):
         r = torch.rand(1)  # Random value to decide if augmentation is applied
@@ -86,15 +90,15 @@ class ImageEncoder(nn.Module):
             # Stack and sum embeddings for augmented inputs
             img_features_t = torch.stack(embed_lst, dim=1)
             x = torch.sum(img_features_t, dim=1)
+            x = self.projection(x)
+            x = F.relu(x)
             x = self.augment_linear(x)  # Apply the bottleneck structure
         else: 
             # Process a single image input if no augmentation is applied
             x = self.model.forward_features(img_inputs_lst[0])
             x = x.view(x.size(0), -1)
-        
-        # Apply linear transformation and ReLU activation
-        x = self.linear(x)
-        x = F.relu(x)
+            x = self.projection(x)
+            x = F.relu(x)        
 
         return x
 

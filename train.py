@@ -1,7 +1,7 @@
 import os
 
 # Set environment variables for CUDA devices and world size for distributed training
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 os.environ["WORLD_SIZE"] = '1'
 
 # Load environment variables from a .env file
@@ -88,14 +88,14 @@ def save_model(save_path, model, optimizer, scaler):
         model_state_dict = model.state_dict()
 
     # Create a checkpoint dictionary
-    checkpoint = {
-        'model': model_state_dict,
-        'optimizer': optimizer.state_dict(),
-        'scaler': scaler.state_dict()
-    }
+    # checkpoint = {
+    #     'model': model_state_dict,
+    #     'optimizer': optimizer.state_dict(),
+    #     'scaler': scaler.state_dict()
+    # }
     
     # Save the checkpoint
-    torch.save(checkpoint, save_path)
+    torch.save(model_state_dict, save_path)
     
 
 def free_vram(model, optimizer, scaler):
@@ -458,13 +458,17 @@ def main():
                             is_img_augment=args.is_img_augment).to(device)
 
     # Load the best model's state from the saved checkpoint
-    dev = torch.cuda.current_device()  # Get current CUDA device
-    checkpoint = torch.load(save_best_path,
-                            weights_only=True,
-                            map_location = lambda storage, loc: storage.cuda(dev))
+    # dev = torch.cuda.current_device()  # Get current CUDA device
+    # checkpoint = torch.load(save_best_path,
+    #                         weights_only=True,
+    #                         map_location = lambda storage, loc: storage.cuda(dev))
 
-    best_model.load_state_dict(checkpoint['model'], 
-                               strict=False)  # Load the model state
+    # best_model.load_state_dict(checkpoint['model'], 
+    #                            strict=False)  # Load the model state
+
+    best_model.load_state_dict(torch.load(save_best_path, 
+                                          weights_only=True), 
+                               strict=False)
 
     # Evaluate the model on the test set
     test_loss, test_acc, test_cider = evaluate(model=best_model,
