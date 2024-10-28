@@ -36,7 +36,8 @@ class ViVQADataset(Dataset):
         self.is_img_augment = is_img_augment
         self.n_img_augments = n_img_augments 
         self.img_augment_thresh = img_augment_thresh
-
+        self.filter = 'no'
+        
         if self.data_mode == 'train':
             train_filename = f'{n_para_pool}_paraphrases_train.csv'
             data_path = os.path.join(data_dir, 'ViVQA', train_filename)
@@ -48,7 +49,9 @@ class ViVQADataset(Dataset):
             
             self.aug_imgs_rootpath = os.path.join(data_dir, 'ViVQA', 'aug_imgs_merge')
             # Sentence transformer model for calculation of text similarity scores.
-            self.sen_model = SentenceTransformer('paraphrase-MiniLM-L6-v2').to(device)
+            
+            if self.is_text_augment and self.filter == 'sbert':
+                self.sen_model = SentenceTransformer('paraphrase-MiniLM-L6-v2').to(device)
         else:
             self.data_path = os.path.join(data_dir, 'ViVQA', 'test.csv')
         
@@ -57,7 +60,6 @@ class ViVQADataset(Dataset):
         self.img_encoder_dict = img_encoder_dict
         self.device = device
 
-        self.filter = 'sbert'
         self.questions, self.para_questions, self.img_paths, self.img_ids, self.answers = self.get_data()
         self.label_encoder = label_encoder
         

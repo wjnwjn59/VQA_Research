@@ -62,7 +62,6 @@ class ImageEncoder(nn.Module):
             param.requires_grad = True
         self.is_img_augment = is_img_augment  # Flag for image augmentation
         self.model = img_model  # Image model
-
         # Bottleneck structure for 
         if self.is_img_augment:
             self.augment_linear = nn.Sequential(

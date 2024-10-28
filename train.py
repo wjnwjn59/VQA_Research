@@ -1,7 +1,7 @@
 import os
 
 # Set environment variables for CUDA devices and world size for distributed training
-os.environ["CUDA_VISIBLE_DEVICES"] = '0'
+os.environ["CUDA_VISIBLE_DEVICES"] = '1'
 os.environ["WORLD_SIZE"] = '1'
 
 # Load environment variables from a .env file

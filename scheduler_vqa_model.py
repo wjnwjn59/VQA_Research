@@ -3,7 +3,6 @@ import torch.nn as nn
 
 from torch.functional import F
 
-
 # Define a Text Encoder class that handles the text input and projects it into a new dimension.
 class TextEncoder(nn.Module):
     def __init__(self, text_model, projection_dim, is_text_augment):
