@@ -3,22 +3,6 @@ import torch.nn as nn
 
 from torch.functional import F
 
-class BottleneckBlock(nn.Module):
-    def __init__(self, input_dim):
-        super().__init__()
-        self.proj = nn.Sequential(
-            nn.Linear(input_dim, input_dim // 2),  # Bottleneck layer
-            nn.ReLU(),  # Non-linearity (ReLU for lightweight performance)
-            nn.Linear(input_dim // 2, input_dim),  # Expand back to original dimension
-        )
-        # self.norm = nn.LayerNorm(input_dim)
-
-    def forward(self, x):
-        x = self.proj(x) + x
-        x = self.norm(x)
-        return x 
-
-
 
 # Define a Text Encoder class that handles the text input and projects it into a new dimension.
 class TextEncoder(nn.Module):
@@ -31,16 +15,8 @@ class TextEncoder(nn.Module):
             
         self.is_text_augment = is_text_augment  # Flag for augmenting text data
         self.model = text_model  # Text model
-        # self.norm = nn.LayerNorm(projection_dim)
+        self.linear = nn.Linear(self.model.config.hidden_size, projection_dim)
 
-        self.proj = nn.Sequential(
-            nn.Linear(self.model.config.hidden_size, projection_dim),
-            nn.ReLU()
-        )
-
-        # Bottleneck structure for augment_linear
-        if self.is_text_augment:
-            self.augment_linear = BottleneckBlock(projection_dim)
 
     def forward(self, text_inputs_lst, augment_thresh):
         r = torch.rand(1)  # Generate a random value to decide if augmentation should be applied
@@ -54,17 +30,17 @@ class TextEncoder(nn.Module):
             # Stack embeddings and sum them for augmented inputs
             para_features_t = torch.stack(embed_lst, dim=1)
             x = torch.sum(para_features_t, dim=1)  # Sum the embeddings along the new dimension
-            x = self.proj(x) 
-            x = self.augment_linear(x) 
-
         else:
             # Process a single text input if no augmentation is applied
             text_inputs = text_inputs_lst[0]
             x = self.model(**text_inputs)  # Forward pass through the text model
             x = x['last_hidden_state'][:, 0, :]  # Extract the embedding of the [CLS] token
-            x = self.proj(x) 
 
-        return x
+        # Apply linear transformation and GELU activation
+        x = self.linear(x) 
+        x = F.gelu(x)
+
+        return x 
 
 
 # Define an Image Encoder class that handles the image input and projects it into a new dimension.
@@ -77,16 +53,8 @@ class ImageEncoder(nn.Module):
             param.requires_grad = True
         self.is_img_augment = is_img_augment  # Flag for image augmentation
         self.model = img_model  # Image model
+        self.linear = nn.Linear(self.model.num_features * 7 * 7, projection_dim)  # Linear projection for flattened features
 
-        # Linear projection for flattened features
-        self.proj = nn.Sequential(
-            nn.Linear(self.model.num_features * 7 * 7, projection_dim),
-            nn.ReLU()
-        )
-
-        # Bottleneck structure for 
-        if self.is_img_augment:
-            self.augment_linear = BottleneckBlock(projection_dim)
 
     def forward(self, img_inputs_lst, augment_thresh):
         r = torch.rand(1)  # Random value to decide if augmentation is applied
@@ -100,32 +68,46 @@ class ImageEncoder(nn.Module):
             # Stack and sum embeddings for augmented inputs
             img_features_t = torch.stack(embed_lst, dim=1)
             x = torch.sum(img_features_t, dim=1)
-            x = self.proj(x)
-            x = self.augment_linear(x)  # Apply the bottleneck structure
         else: 
             # Process a single image input if no augmentation is applied
             x = self.model.forward_features(img_inputs_lst[0])
             x = x.view(x.size(0), -1)
-            x = self.proj(x)       
+        
+        # Apply linear transformation and GELU activation
+        x = self.linear(x)
+        x = F.gelu(x)
 
         return x
 
 
+# Define a Classifier class that combines text and image features and predicts the output
 class Classifier(nn.Module):
-    def __init__(self, projection_dim, hidden_dim, answer_space):
+    def __init__(self, projection_dim, hidden_dim, answer_space, is_kd):
         super().__init__()
-        self.fc = nn.Linear(projection_dim * 2, hidden_dim)
-        self.dropout = nn.Dropout(0.2)  
-        self.classifier = nn.Linear(hidden_dim, answer_space)  # Final classification layer
+        
+        # Fully connected layers for classification
+        self.fc = nn.Linear(projection_dim * 2, hidden_dim)  # Linear layer for combining features
+        self.dropout = nn.Dropout(0.4)  # Dropout layer to prevent overfitting
+        self.classifier = nn.Linear(hidden_dim, answer_space)  # Linear layer for final classification
+        self.is_kd = is_kd  # Flag for training with Knowledge Distillation method
 
+
+    # Forward pass to combine text and image features and output the final prediction
     def forward(self, text_f, img_f):
-        x = torch.cat((img_f, text_f), 1)  # Concatenate text and image features
+        x = torch.cat((img_f, text_f), 1)  # Concatenate the text and image features
         x = self.fc(x)
-        x = F.relu(x)
+        
+        kd_logits = x  # Take logits of fused features to calculate Knowledge Distillation loss later
+        
+        x = F.gelu(x)
         x = self.dropout(x)
         x = self.classifier(x)
 
-        return x
+        # If model is used for KD train, return kd_logits for calculate KD loss in training
+        if self.is_kd:
+            return x, kd_logits
+        else:
+            return x
 
 
 # Main model class combining text, image encoders, and classifier for VQA (Visual Question Answering)
@@ -134,7 +116,8 @@ class ViVQAModel(nn.Module):
                  text_encoder_dict, img_encoder_dict,
                  is_text_augment=True, is_img_augment=False,
                  total_epochs=100, use_dynamic_thresh=True, 
-                 text_para_thresh=0.6, img_augment_thresh=0.6):
+                 text_para_thresh=0.6, img_augment_thresh=0.6,
+                 is_kd=False):
         
         super().__init__()
         
@@ -151,7 +134,8 @@ class ViVQAModel(nn.Module):
         # Initialize the classifier        
         self.classifier = Classifier(projection_dim=projection_dim,
                                      hidden_dim=hidden_dim,
-                                     answer_space=answer_space_len)
+                                     answer_space=answer_space_len,
+                                     is_kd=is_kd)
     
         # Dynamic threshold settings for augmentation
         self.use_dynamic_thresh = use_dynamic_thresh
@@ -161,6 +145,10 @@ class ViVQAModel(nn.Module):
         self.current_epoch = 0
         self.start_threshold = 0.6
         self.min_threshold = 0.0
+        
+        # Flag for Knowledge Distillation
+        self.is_kd = is_kd
+
 
     # Compute dynamic thresholds for augmentation based on the current epoch
     def get_threshold(self):
@@ -172,15 +160,20 @@ class ViVQAModel(nn.Module):
 
         return updated_thresh, updated_thresh
 
+
     # Forward pass for the entire model (combines text and image inputs)
     def forward(self, text_inputs, img_inputs):
         text_thresh, img_thresh = self.get_threshold()
         text_f = self.text_encoder(text_inputs, text_thresh)  # Encode text inputs
         img_f = self.img_encoder(img_inputs, img_thresh)  # Encode image inputs
 
-        logits = self.classifier(text_f, img_f)  # Predict using classifier
+        outputs = self.classifier(text_f, img_f)  # Predict using classifier
 
-        return logits
+        # If model's kd flag is True, outputs contain 2 values: logits and kd_logits
+        # Else: return logits only
+        # For more detail, read the class Classifier above
+        return outputs
+
 
     # Update the current epoch for dynamic threshold adjustment
     def update_epoch(self, epoch):

@@ -114,23 +114,6 @@ class TextProcessorWrapper:
         return text_processor(text, self.tokenizer) # Allow function call behavior
 
 
-def decode(encoded_inputs, text_tokenizer):
-    """
-    Decode encoded_inputs back to original text
-    """
-    text = text_tokenizer.batch_decode(encoded_inputs, skip_special_tokens=True)
-    return text
-
-
-# Wrapper class for text decode tokens
-class DecodeWrapper:
-    def __init__(self, tokenizer):
-        self.tokenizer = tokenizer
-
-    def __call__(self, encoded_inputs):
-        return decode(encoded_inputs, self.tokenizer) # Allow function call behavior
-
-
 # Load the text encoder model and its associated tokenizer and text processor
 def load_text_encoder(text_model_id):
     text_tokenizer = AutoTokenizer.from_pretrained(text_model_id) # Load the tokenizer
@@ -142,6 +125,5 @@ def load_text_encoder(text_model_id):
         'model_name': text_model_id, # Model name
         'text_processor': TextProcessorWrapper(text_tokenizer), # Text processor
         'features_dim': text_model.config.hidden_size, # Features dimension
-        'text_model': text_model, # Text model
-        'decode': DecodeWrapper(text_tokenizer) # Text decode tokens
+        'text_model': text_model # Text model
     }
