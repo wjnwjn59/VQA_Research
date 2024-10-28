@@ -4,30 +4,33 @@ import os
 
 import matplotlib.pyplot as plt
 
-def augment_image(img_pil, n_img_augmentations=1):
-    augmented_imgs = [] 
-    # transform = transforms.Compose([
-    #     # transforms.RandomHorizontalFlip(p=0.5), # Flips the image horizontally with a fixed probability.
-    #     #transforms.RandomVerticalFlip(p=1), # Flips the image vertically with a fixed probability.
-    #     # transforms.RandomPerspective(p=0.3, p=0.5),
-    #     # transforms.RandomRotation(degrees=10) # Rotates the image by a given degree.
-    # ])
-    # for _ in range(n_img_augmentations):
-    #     # Apply the transformation to the input image and store the result.
-    #     augmented_img = transform(img_pil)
-    #     augmented_imgs.append(augmented_img)
-    cropper = transforms.RandomCrop(size=(64, 64))
-    augmented_imgs = [cropper(img_pil) for _ in range(4)]
-
-    return augmented_imgs
+def augment_image_merge(aug_imgs_path):
+    return [Image.open(os.path.join(aug_imgs_path))]
 
 
-# os.makedirs('augmented_images', exist_ok=True)
-# img_path = '/home/VLAI/datasets/OpenViVQA/dev-images/000000003757.jpg'
-# img_pils = Image.open(img_path).convert('RGB')
-# augmented_imgs_pil = augment_image(img_pils, 5)
-# idx = 0
-# for img_pil in augmented_imgs_pil:
-#     img_pil.save(f'augmented_images/augmented_image_{idx}.png')
-#     idx += 1
+# Function return all augmented images in a folder as a list of PIL images
+def augment_image_multi_unique(ori_img, aug_imgs_folderpath, max_aug_imgs=3):
+    aug_imgs = [] 
 
+    ori_img = ori_img.convert('RGB')
+    
+    transform = transforms.Compose([
+        transforms.RandomCrop((128, 128)),
+        transforms.Resize(ori_img.size),
+    ])
+
+    for img_file in os.listdir(aug_imgs_folderpath):
+        img_file_path = os.path.join(aug_imgs_folderpath, img_file)
+        img_pil = Image.open(img_file_path).convert('RGB')  # Convert to RGB to ensure 3 channels
+        img_pil = img_pil.resize(ori_img.size)
+        aug_imgs.append(img_pil)
+                
+        max_aug_imgs -= 1
+        if max_aug_imgs <= 0: break
+    
+    while max_aug_imgs > 0:
+        augmented_img = transform(ori_img)
+        aug_imgs.append(augmented_img)
+        max_aug_imgs -= 1
+
+    return aug_imgs

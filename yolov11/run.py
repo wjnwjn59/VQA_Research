@@ -42,12 +42,15 @@ def set_seed(random_seed):
 def generate_aug_imgs(model, df, COCO_path, conf, root_save_path):
     # Create root directory
     if not os.path.exists(root_save_path):
-        os.makedirs(root_save_path)
-    
+        os.makedirs(root_save_path)  
+        
     # Iterate over images in the DataFrame
     for img_id in tqdm(df, desc="Processing images"):
         img_path = f'{img_id:012}.jpg'
         img = Image.open(os.path.join(COCO_path, img_path))
+        
+        width, height = img.size
+        
         results = model.predict(img, conf=conf)
 
         # Create directory to save bounding boxes if it does not exist
@@ -59,17 +62,21 @@ def generate_aug_imgs(model, df, COCO_path, conf, root_save_path):
         # Iterate over results to process bounding boxes
         for result in results:
             for box in result.boxes:
+                canvas = Image.new('RGB', (width, height), (0, 0, 0))
                 # Extract coordinates for the bounding box
                 x_min, y_min, x_max, y_max = map(int, box.xyxy[0])
                 
                 # Crop the bounding box from the original image
                 cropped_img = img.crop((x_min, y_min, x_max, y_max))
                 
+                # Paste the cropped image onto the canvas
+                canvas.paste(cropped_img, (x_min, y_min, x_max, y_max))
+                
                 save_path = os.path.join(folder_path, f'{img_id}_{count}.jpg')
-                cropped_img.save(save_path)
+                canvas.save(save_path)
                 
                 count += 1
-        
+
     return True
 
 
@@ -83,14 +90,11 @@ def generate_aug_imgs_unique(model, df, COCO_path, conf, root_save_path):
     for img_id in tqdm(df, desc="Processing images"):
         img_path = f'{img_id:012}.jpg'
         img = Image.open(os.path.join(COCO_path, img_path))
-        print(img.mode)
-        exit()
         results = model.predict(img, conf=conf)
                 
         width, height = img.size
         canvas = Image.new('RGB', (width, height), (0, 0, 0))
                         
-        count = 0
         # Iterate over results to process bounding boxes
         for result in results:
             for box in result.boxes:
@@ -135,10 +139,10 @@ def main():
     df = pd.read_csv(train_filepath)  # Load the original dataset from a CSV file
     img_df = df['img_id']  # Initialize an empty DataFrame to store the paraphrased data
     
-    result = generate_aug_imgs_unique(model=model, 
+    result = generate_aug_imgs(model=model, 
                                     df=img_df, 
                                     COCO_path="/home/VLAI/datasets/COCO_Images/merge", 
-                                    conf=0.15, 
+                                    conf=0.3, 
                                     root_save_path=root_save_path)
             
     if result:

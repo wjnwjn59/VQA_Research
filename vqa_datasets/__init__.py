@@ -2,7 +2,7 @@ from typing import Dict, Type
 from torch.utils.data import Dataset
 
 from .openvivqa_dataset import OpenViVQADataset
-from .vivqa_dataset import ViVQADataset
+from .vivqa_dataset_MERGE import ViVQADataset
 
 DATASET_MAPPING: Dict[str, Type[Dataset]] = {
     'openvivqa': OpenViVQADataset,
