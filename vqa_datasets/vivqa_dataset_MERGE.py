@@ -87,35 +87,18 @@ class ViVQADataset(Dataset):
                     question_paraphrases = row['question_paraphrase'] 
                     question_paraphrases = ast.literal_eval(question_paraphrases)   
                     
-                    # Encoder câu hỏi gốc và các câu paraphrase
                     ori_sen = self.sen_model.encode(question)
                     paraphrase_sens = self.sen_model.encode(question_paraphrases)
 
-                    # Tính điểm tương đồng cosine giữa câu gốc và các câu paraphrase
                     scores = util.pytorch_cos_sim(ori_sen, paraphrase_sens).flatten()
                     
-                    # Tạo danh sách gồm các câu paraphrase và điểm số tương ứng
                     paraphrase_with_scores = list(zip(question_paraphrases, scores))
                     
-                    # Đặt trước giới hạn
-                    # max_score = 0.95
-                    # min_score = 0.9
-                    
-                    # Lọc các câu paraphrase trong vùng giới hạn từ min_score đến max_score
-                    # filtered_paraphrases = [(para, score) for para, score in paraphrase_with_scores if min_score <= score <= max_score]
-                    # filtered_paraphrases = [para for para, score in paraphrase_with_scores if min_score <= score <= max_score]
-                    # if len(filtered_paraphrases) < self.min_para_size:
-                    #     self.min_para_size = len(filtered_paraphrases)
-                    #     print("New minimum para size: ", self.min_para_size)
-                    
-                    # Sắp xếp danh sách theo thứ tự điểm số từ cao đến thấp 
                     paraphrase_with_scores_sorted = sorted(paraphrase_with_scores, key=lambda x: x[1], reverse=True)
                     
-                    # Đặt trước giới hạn
                     from_index = 2
                     ktop = 10
                     
-                    # Lấy ra một số câu paraphrase trong vùng giới hạn từ from_index đến to_index
                     paraphrase_with_scores_sorted = [para for para, score in paraphrase_with_scores_sorted]
                     selected_para_questions = paraphrase_with_scores_sorted[from_index:(from_index + ktop)]
                     
@@ -132,11 +115,9 @@ class ViVQADataset(Dataset):
                     paraphrase_with_scores = list(zip(question_paraphrases, scores))
                     paraphrase_with_scores_sorted = sorted(paraphrase_with_scores, key=lambda x: x[1], reverse=True)
                     
-                    # Đặt trước giới hạn
                     from_index = 2
                     ktop = 10
                     
-                    # Lấy ra một số câu paraphrase trong vùng giới hạn từ from_index đến to_index
                     paraphrase_with_scores_sorted = [para for para, score in paraphrase_with_scores_sorted]
                     selected_para_questions = paraphrase_with_scores_sorted[from_index:(from_index + ktop)]
                     

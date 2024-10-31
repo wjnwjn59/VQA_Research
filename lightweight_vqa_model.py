@@ -15,7 +15,7 @@ class BottleneckBlock(nn.Module):
 
     def forward(self, x):
         x = self.proj(x) + x
-        # x = self.norm(x)
+        x = self.norm(x)
         return x 
 
 
