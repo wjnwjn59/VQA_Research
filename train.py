@@ -88,14 +88,14 @@ def save_model(save_path, model, optimizer, scaler):
         model_state_dict = model.state_dict()
 
     # Create a checkpoint dictionary
-    # checkpoint = {
-    #     'model': model_state_dict,
-    #     'optimizer': optimizer.state_dict(),
-    #     'scaler': scaler.state_dict()
-    # }
+    checkpoint = {
+        'model': model_state_dict,
+        # 'optimizer': optimizer.state_dict(),
+        # 'scaler': scaler.state_dict()
+    }
     
     # Save the checkpoint
-    torch.save(model_state_dict, save_path)
+    torch.save(checkpoint, save_path)
     
 
 def free_vram(model, optimizer, scaler):
@@ -290,7 +290,7 @@ def parse_args():
     parser = argparse.ArgumentParser(description='ViVQA Training Script')
     parser.add_argument('--seed', type=int, default=pipeline_config.seed, help='Random seed')
     parser.add_argument('--gpus', type=str, default='0', help='Indices of GPUs used count from 0')
-    parser.add_argument('--project_name', type=str, default='vivqa_paraphrase_augmentation', help='Project name for wandb')
+    parser.add_argument('--project_name', type=str, default='vivqa_paraphrase_augmentation_lightweight', help='Project name for wandb')
     parser.add_argument('--exp_name', type=str, help='Experiment name for wandb')
     parser.add_argument('--dataset_name', default=pipeline_config.dataset_name, type=str, help='Name of the dataset')
     parser.add_argument('--data_dir', default=pipeline_config.data_dir, type=str, help='Dataset directory')
@@ -308,6 +308,7 @@ def parse_args():
     parser.add_argument('--n_text_paras', type=int, default=pipeline_config.n_text_paras, help='Number of paraphrases')
     parser.add_argument('--text_para_thresh', type=float, default=pipeline_config.text_para_thresh, help='Paraphrase threshold')
     parser.add_argument('--n_text_para_pool', type=int, default=pipeline_config.n_text_para_pool, help='The number of paraphrase in the paraphrase pool')
+    parser.add_argument('--filter', type=str, default='no', help='The method to filter paraphrases by the similarity to the original question')
     parser.add_argument('--is_img_augment', type=lambda x: (str(x).lower() == 'true'), default=pipeline_config.is_img_augment, help='Augment with img geometric shift')
     parser.add_argument('--n_img_augments', type=int, default=pipeline_config.n_img_augments, help='Number of image augments')
     parser.add_argument('--img_augment_thresh', type=float, default=pipeline_config.img_augment_thresh, help='Image augmentation threshold')
@@ -356,10 +357,10 @@ def main():
                        img_augment_thresh=args.img_augment_thresh)
 
     # Check if multiple GPUs are available and set up DataParallel if necessary
-    is_multi_gpus = len(args.gpus.split(',')) > 1
-    if is_multi_gpus:
-        model = nn.DataParallel(model,
-                                device_ids=list(map(int, args.gpus.split(','))))  # Wrap model in DataParallel
+    # is_multi_gpus = len(args.gpus.split(',')) > 1
+    # if is_multi_gpus:
+    #     model = nn.DataParallel(model,
+    #                             device_ids=list(map(int, args.gpus.split(','))))  # Wrap model in DataParallel
 
     # Compile the model for optimization
     model = torch.compile(model, mode='default') 
@@ -443,7 +444,7 @@ def main():
                                                                                                      patience=args.patience,
                                                                                                      save_best_path=save_best_path,
                                                                                                      is_log_result=args.is_log_result,
-                                                                                                     is_multi_gpus=is_multi_gpus,
+                                                                                                     is_multi_gpus=False,
                                                                                                      use_amp=args.use_amp)
     
     free_vram(model, optimizer, scaler)  # Free VRAM to avoid memory overflow
@@ -458,17 +459,20 @@ def main():
                             is_img_augment=args.is_img_augment).to(device)
 
     # Load the best model's state from the saved checkpoint
-    # dev = torch.cuda.current_device()  # Get current CUDA device
-    # checkpoint = torch.load(save_best_path,
-    #                         weights_only=True,
-    #                         map_location = lambda storage, loc: storage.cuda(dev))
-
-    # best_model.load_state_dict(checkpoint['model'], 
-    #                            strict=False)  # Load the model state
-
-    best_model.load_state_dict(torch.load(save_best_path, 
-                                          weights_only=True), 
-                               strict=False)
+    dev = torch.cuda.current_device()  # Get current CUDA device
+    checkpoint = torch.load(save_best_path,
+                        weights_only=True,
+                        map_location = lambda storage, loc: storage.cuda(dev))
+    
+    # Remove prefix _orig_mod.
+    state_dict = checkpoint['model']
+    new_state_dict = {}
+    for key, value in state_dict.items():
+        new_key = key.replace("_orig_mod.", "")  # Xóa tiền tố '_orig_mod.'
+        new_state_dict[new_key] = value
+    
+    # Load the model state
+    best_model.load_state_dict(new_state_dict) 
 
     # Evaluate the model on the test set
     test_loss, test_acc, test_cider = evaluate(model=best_model,
@@ -492,7 +496,7 @@ def main():
         wandb.log({"Exp_table": exp_table})  # Log the experiment results
 
     # Print the final test results
-    print(f'Test loss: {test_loss}\tTest acc: {test_acc}')
+    print(f'Test acc: {test_acc}\tTest loss: {test_loss}')
     
 
 if __name__ == '__main__':
