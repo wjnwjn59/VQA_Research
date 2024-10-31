@@ -4,26 +4,33 @@ import os
 
 import matplotlib.pyplot as plt
 
-def augment_image(img_pil, n_img_augmentations=1):
-    augmented_imgs = [] 
+def augment_image_merge(aug_imgs_path):
+    return [Image.open(os.path.join(aug_imgs_path))]
+
+
+# Function return all augmented images in a folder as a list of PIL images
+def augment_image_multi_unique(ori_img, aug_imgs_folderpath, max_aug_imgs=3):
+    aug_imgs = [] 
+
+    ori_img = ori_img.convert('RGB')
+    
     transform = transforms.Compose([
-        transforms.RandomHorizontalFlip(p=1),
-        transforms.RandomVerticalFlip(p=0.2),
-        transforms.RandomRotation(degrees=45),
-        # transforms.RandomPosterize(bits=3),
-        transforms.RandomPerspective(distortion_scale=0.1, p=0.2)
+        transforms.RandomCrop((128, 128)),
+        transforms.Resize(ori_img.size),
     ])
-    for _ in range(n_img_augmentations):
-        augmented_img = transform(img_pil)
-        augmented_imgs.append(augmented_img)
 
-    return augmented_imgs
+    for img_file in os.listdir(aug_imgs_folderpath):
+        img_file_path = os.path.join(aug_imgs_folderpath, img_file)
+        img_pil = Image.open(img_file_path).convert('RGB')  # Convert to RGB to ensure 3 channels
+        img_pil = img_pil.resize(ori_img.size)
+        aug_imgs.append(img_pil)
+                
+        max_aug_imgs -= 1
+        if max_aug_imgs <= 0: break
+    
+    while max_aug_imgs > 0:
+        augmented_img = transform(ori_img)
+        aug_imgs.append(augmented_img)
+        max_aug_imgs -= 1
 
-# os.makedirs('augmented_images', exist_ok=True)
-# img_path = '/home/VLAI/datasets/OpenViVQA/dev-images/000000003757.jpg'
-# img_pils = Image.open(img_path).convert('RGB')
-# augmented_imgs_pil = augment_image(img_pils, 5)
-# idx = 0
-# for img_pil in augmented_imgs_pil:
-#     img_pil.save(f'augmented_images/augmented_image_{idx}.png')
-#     idx += 1
+    return aug_imgs
