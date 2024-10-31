@@ -3,10 +3,10 @@ class PipelineConfig:
         self.seed = 59
         self.learning_rate = 1e-5
         self.epochs = 30
-        self.train_batch_size = 16 
+        self.train_batch_size = 32
         self.test_batch_size = 64
-        self.hidden_dim = 512
-        self.projection_dim = 512
+        self.hidden_dim = 2048
+        self.projection_dim = 2048
         self.weight_decay = 1e-5
         self.patience = 5
         self.text_max_len = 50
@@ -15,15 +15,16 @@ class PipelineConfig:
         self.img_encoder_id = "timm/resnet18.a1_in1k"
         self.paraphraser_id = "chieunq/vietnamese-sentence-paraphase"
         self.is_text_augment = False
-        self.n_text_paras = 1
-        self.text_para_thresh = 0.6
-        self.n_text_para_pool = 30
+        self.n_text_paras = 0
+        self.text_para_thresh = 0
+        self.n_text_para_pool = 0
         self.is_img_augment = False
-        self.n_img_augments = 1
-        self.img_augment_thresh = 0.2
+        self.n_img_augments = 0
+        self.img_augment_thresh = 0
         self.use_dynamic_thresh = False
         self.dataset_name = 'vivqa'
         self.data_dir = "/home/VLAI/datasets"
         self.use_amp = True
+        self.pretrained_teacher_path = '/home/VLAI/khoina/VQA_Research/runs/train/weights_20241008-210436/Teacher_seed59_vivqa_currTrue&0.6_istextaugTrue_ntextpara1_random0.6_nparapool30_isimgaugFalse_nimgaug1_random0_teacher_best.pt'
 
 pipeline_config = PipelineConfig()
