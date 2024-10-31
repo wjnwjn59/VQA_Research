@@ -23,7 +23,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 class ViVQADataset(Dataset):
     def __init__(self, data_dir, data_mode, text_encoder_dict, img_encoder_dict, 
                  label_encoder=None, is_text_augment=True, is_img_augment=True,
-                 n_text_paras=3, text_para_thresh=0.9, n_para_pool=20,
+                 n_text_paras=3, text_para_thresh=0.9, n_para_pool=20, filter='no',
                  n_img_augments=1, img_augment_thresh=0.9):
                 #  max_score=0.95, min_score=0.9):
         self.data_dir = data_dir
@@ -36,7 +36,7 @@ class ViVQADataset(Dataset):
         self.is_img_augment = is_img_augment
         self.n_img_augments = n_img_augments 
         self.img_augment_thresh = img_augment_thresh
-        self.filter = 'no'
+        self.filter = filter
         
         if self.data_mode == 'train':
             train_filename = f'{n_para_pool}_paraphrases_train.csv'
@@ -61,10 +61,12 @@ class ViVQADataset(Dataset):
         self.device = device
 
         self.questions, self.para_questions, self.img_paths, self.img_ids, self.answers = self.get_data()
+        if self.is_text_augment and self.filter == 'sbert':
+            del self.sen_model
+        
         self.label_encoder = label_encoder
         
         
-
     def get_data(self):
         df = pd.read_csv(self.data_path, index_col=0)
         questions = [] 
@@ -111,11 +113,11 @@ class ViVQADataset(Dataset):
                     
                     # Đặt trước giới hạn
                     from_index = 2
-                    to_index = 8
+                    ktop = 10
                     
                     # Lấy ra một số câu paraphrase trong vùng giới hạn từ from_index đến to_index
                     paraphrase_with_scores_sorted = [para for para, score in paraphrase_with_scores_sorted]
-                    selected_para_questions = paraphrase_with_scores_sorted[from_index:to_index]
+                    selected_para_questions = paraphrase_with_scores_sorted[from_index:(from_index + ktop)]
                     
                     para_questions.append(selected_para_questions)
                 
@@ -132,11 +134,11 @@ class ViVQADataset(Dataset):
                     
                     # Đặt trước giới hạn
                     from_index = 2
-                    to_index = 15
+                    ktop = 10
                     
                     # Lấy ra một số câu paraphrase trong vùng giới hạn từ from_index đến to_index
                     paraphrase_with_scores_sorted = [para for para, score in paraphrase_with_scores_sorted]
-                    selected_para_questions = paraphrase_with_scores_sorted[from_index:to_index]
+                    selected_para_questions = paraphrase_with_scores_sorted[from_index:(from_index + ktop)]
                     
                     para_questions.append(selected_para_questions)
                 

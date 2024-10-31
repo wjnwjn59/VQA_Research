@@ -82,8 +82,4 @@ def evaluate(model, val_loader, criterion, idx2label, dataset_name):
         return eval_loss, -1, eval_cider
     else:
         eval_acc = compute_accuracy(total_correct, total_samples)
-<<<<<<< HEAD
-=======
-
->>>>>>> origin/main
         return eval_loss, eval_acc, -1
