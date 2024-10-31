@@ -459,17 +459,20 @@ def main():
                             is_img_augment=args.is_img_augment).to(device)
 
     # Load the best model's state from the saved checkpoint
-    # dev = torch.cuda.current_device()  # Get current CUDA device
-    # checkpoint = torch.load(save_best_path,
-    #                         weights_only=True,
-    #                         map_location = lambda storage, loc: storage.cuda(dev))
-
-    # best_model.load_state_dict(checkpoint['model'], 
-    #                            strict=False)  # Load the model state
-
-    best_model.load_state_dict(torch.load(save_best_path, 
-                                          weights_only=True), 
-                               strict=False)
+    dev = torch.cuda.current_device()  # Get current CUDA device
+    checkpoint = torch.load(save_best_path,
+                        weights_only=True,
+                        map_location = lambda storage, loc: storage.cuda(dev))
+    
+    # Remove prefix _orig_mod.
+    state_dict = checkpoint['model']
+    new_state_dict = {}
+    for key, value in state_dict.items():
+        new_key = key.replace("_orig_mod.", "")  # Xóa tiền tố '_orig_mod.'
+        new_state_dict[new_key] = value
+    
+    # Load the model state
+    best_model.load_state_dict(new_state_dict) 
 
     # Evaluate the model on the test set
     test_loss, test_acc, test_cider = evaluate(model=best_model,
