@@ -11,13 +11,12 @@ class BottleneckBlock(nn.Module):
             nn.ReLU(),  # Non-linearity (ReLU for lightweight performance)
             nn.Linear(input_dim // 2, input_dim),  # Expand back to original dimension
         )
-        # self.norm = nn.LayerNorm(input_dim)
+        self.norm = nn.LayerNorm(input_dim)
 
     def forward(self, x):
         x = self.proj(x) + x
-        x = self.norm(x)
+        # x = self.norm(x)
         return x 
-
 
 
 # Define a Text Encoder class that handles the text input and projects it into a new dimension.

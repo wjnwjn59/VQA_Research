@@ -308,6 +308,7 @@ def parse_args():
     parser.add_argument('--n_text_paras', type=int, default=pipeline_config.n_text_paras, help='Number of paraphrases')
     parser.add_argument('--text_para_thresh', type=float, default=pipeline_config.text_para_thresh, help='Paraphrase threshold')
     parser.add_argument('--n_text_para_pool', type=int, default=pipeline_config.n_text_para_pool, help='The number of paraphrase in the paraphrase pool')
+    parser.add_argument('--filter', type=str, default='no', help='The method to filter paraphrases by the similarity to the original question')
     parser.add_argument('--is_img_augment', type=lambda x: (str(x).lower() == 'true'), default=pipeline_config.is_img_augment, help='Augment with img geometric shift')
     parser.add_argument('--n_img_augments', type=int, default=pipeline_config.n_img_augments, help='Number of image augments')
     parser.add_argument('--img_augment_thresh', type=float, default=pipeline_config.img_augment_thresh, help='Image augmentation threshold')
@@ -356,10 +357,10 @@ def main():
                        img_augment_thresh=args.img_augment_thresh)
 
     # Check if multiple GPUs are available and set up DataParallel if necessary
-    is_multi_gpus = len(args.gpus.split(',')) > 1
-    if is_multi_gpus:
-        model = nn.DataParallel(model,
-                                device_ids=list(map(int, args.gpus.split(','))))  # Wrap model in DataParallel
+    # is_multi_gpus = len(args.gpus.split(',')) > 1
+    # if is_multi_gpus:
+    #     model = nn.DataParallel(model,
+    #                             device_ids=list(map(int, args.gpus.split(','))))  # Wrap model in DataParallel
 
     # Compile the model for optimization
     model = torch.compile(model, mode='default') 
@@ -443,7 +444,7 @@ def main():
                                                                                                      patience=args.patience,
                                                                                                      save_best_path=save_best_path,
                                                                                                      is_log_result=args.is_log_result,
-                                                                                                     is_multi_gpus=is_multi_gpus,
+                                                                                                     is_multi_gpus=False,
                                                                                                      use_amp=args.use_amp)
     
     free_vram(model, optimizer, scaler)  # Free VRAM to avoid memory overflow
@@ -492,7 +493,7 @@ def main():
         wandb.log({"Exp_table": exp_table})  # Log the experiment results
 
     # Print the final test results
-    print(f'Test loss: {test_loss}\tTest acc: {test_acc}')
+    print(f'Test acc: {test_acc}\tTest loss: {test_loss}')
     
 
 if __name__ == '__main__':
