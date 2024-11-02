@@ -2,11 +2,7 @@ from typing import Dict, Type
 from torch.utils.data import Dataset
 
 from .openvivqa_dataset import OpenViVQADataset
-<<<<<<< HEAD
 from .vivqa_dataset_MERGE import ViVQADataset
-=======
-from .vivqa_dataset import ViVQADataset
->>>>>>> origin/main
 
 DATASET_MAPPING: Dict[str, Type[Dataset]] = {
     'openvivqa': OpenViVQADataset,
@@ -37,6 +33,7 @@ def get_dataset(text_encoder_dict,
             n_text_paras=kwargs['n_text_paras'],
             text_para_thresh=kwargs['text_para_thresh'],
             n_para_pool=kwargs['n_text_para_pool'],
+            filter=kwargs['filter'],
             n_img_augments=kwargs['n_img_augments'],
             img_augment_thresh=kwargs['img_augment_thresh'],
             **common_args
