@@ -27,7 +27,7 @@ class ViVQADataset(Dataset):
         self.img_augment_thresh = img_augment_thresh
 
         if self.data_mode == 'train':
-            train_filename = f'{n_para_pool}_paraphrases_train.csv'
+            train_filename = f'{n_para_pool}_filtered_paraphrases_train.csv'
             data_path = os.path.join(data_dir, 'ViVQA', train_filename)
             if not os.path.exists(data_path):
                 print('Data training file with number of paraphrases pool not found! Select default (20) file.')
@@ -91,6 +91,7 @@ class ViVQADataset(Dataset):
         if self.data_mode == 'train' and self.is_text_augment:
             para_questions = self.para_questions[idx]
             para_questions = ast.literal_eval(para_questions)
+            print(len(para_questions))
             selected_para_questions = random.sample(para_questions, self.n_text_paras)
             paraphrase_inputs_lst = [self.text_encoder_dict['text_processor'](text) for text in selected_para_questions]
 

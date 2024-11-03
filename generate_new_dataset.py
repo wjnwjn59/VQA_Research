@@ -1,7 +1,7 @@
 import os
 
 # Set the CUDA and world size environment variables for GPU settings.
-os.environ["CUDA_VISIBLE_DEVICES"] = '1'
+os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 os.environ["WORLD_SIZE"] = '1'
 
 import json
@@ -94,7 +94,7 @@ def parse_arguments():
     parser.add_argument("--train_filepath", type=str, required=True)
     parser.add_argument("--num_params", type=int, default=20, help="Number of parameters")
     parser.add_argument("--random_seed", type=int, default=59)
-    parser.add_argument("--save_filepath", type=str, default="paraphrases_train.csv")
+    parser.add_argument("--save_filepath", type=str, default="filtered_paraphrases_train.csv")
     parser.add_argument("--is_paraphrased", type=lambda x: (str(x).lower() == 'true'), default=False, help="Is paraphrased dataset?")
     parser.add_argument("--filter_method", type=str, default='knn', help="Select a filtering method: 'knn', 'sbert', 'no' (default: 'knn')")   
     parser.add_argument("--from_index", type=int, default=0, help="Select the start index to get paraphrases from after sorted in descending cosine similarity order (default: 0)")

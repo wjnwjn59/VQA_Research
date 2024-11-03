@@ -7,7 +7,7 @@ import pandas as pd
 
 from PIL import Image
 from torch.utils.data import Dataset
-from .augmentations.img_augmentation import augment_image_multi_unique
+from .augmentations.img_augmentation import augment_image
     
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -96,7 +96,7 @@ class OpenViVQADataset(Dataset):
         img_inputs_lst = [self.img_encoder_dict['img_processor'](img_pils)]
         
         if self.data_mode == 'train' and self.is_img_augment:
-            augmented_imgs_pil = augment_image_multi_unique(img_pils, self.n_img_augments)
+            augmented_imgs_pil = augment_image(img_pils, self.n_img_augments)
             augmented_imgs = [self.img_encoder_dict['img_processor'](img) for img in augmented_imgs_pil]
 
             img_inputs_lst += augmented_imgs 
