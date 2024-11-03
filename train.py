@@ -1,7 +1,7 @@
 import os
 
 # Set environment variables for CUDA devices and world size for distributed training
-os.environ["CUDA_VISIBLE_DEVICES"] = '1'
+os.environ["CUDA_VISIBLE_DEVICES"] = '2'
 os.environ["WORLD_SIZE"] = '1'
 
 # Load environment variables from a .env file
@@ -308,7 +308,6 @@ def parse_args():
     parser.add_argument('--n_text_paras', type=int, default=pipeline_config.n_text_paras, help='Number of paraphrases')
     parser.add_argument('--text_para_thresh', type=float, default=pipeline_config.text_para_thresh, help='Paraphrase threshold')
     parser.add_argument('--n_text_para_pool', type=int, default=pipeline_config.n_text_para_pool, help='The number of paraphrase in the paraphrase pool')
-    parser.add_argument('--filter', type=str, default='no', help='The method to filter paraphrases by the similarity to the original question')
     parser.add_argument('--is_img_augment', type=lambda x: (str(x).lower() == 'true'), default=pipeline_config.is_img_augment, help='Augment with img geometric shift')
     parser.add_argument('--n_img_augments', type=int, default=pipeline_config.n_img_augments, help='Number of image augments')
     parser.add_argument('--img_augment_thresh', type=float, default=pipeline_config.img_augment_thresh, help='Image augmentation threshold')
