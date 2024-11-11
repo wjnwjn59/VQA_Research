@@ -96,7 +96,7 @@ def text_processor(text, text_tokenizer):
     segmented_text = ' '.join(segmented_text) # Join the segmented words
 
     input_ids = text_tokenizer(segmented_text,
-                               max_length=50, # Set maximum length of the tokenized text
+                               max_length=64, # Set maximum length of the tokenized text
                                padding='max_length', # Pad the text to the maximum length
                                truncation=True, # Truncate the text to the maximum length
                                return_token_type_ids=False, # Do not return token type IDs
