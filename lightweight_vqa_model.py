@@ -1,24 +1,23 @@
-import torch
-import torch.nn as nn
+from typing import List
+from torch import nn, Tensor
 import numpy as np
 from torch.functional import F
 from cross_attention import *
 
 
 class BottleneckBlock(nn.Module):
-    def __init__(self, input_dim):
+    def __init__(self, input_dim, intermediate_dim):
         super().__init__()
-        self.proj = nn.Sequential(
-            nn.Linear(input_dim, input_dim // 2),
-            nn.ReLU(),
-            nn.Linear(input_dim // 2, input_dim),
-        )
-        # self.norm = nn.LayerNorm(input_dim)
+        self.proj_in_ori = nn.Linear(input_dim, intermediate_dim)
+        self.proj_in_para = nn.Linear(input_dim, intermediate_dim)
+        self.proj_out = nn.Linear(intermediate_dim, input_dim)
+        self.norm = nn.LayerNorm(intermediate_dim)
 
-    def forward(self, x):
-        x = self.proj(x) + x
-        # x = self.norm(x)
-        return x
+    def forward(self, x_ori: Tensor, X_para: List[Tensor]) -> Tensor:
+        x = self.proj_in_ori(x_ori)
+        for x_para in X_para:
+            x = self.norm(x + self.proj_in_para(x_para))
+        return self.proj_out(x)
 
 
 # Define a Text Encoder class that handles the text input and projects it into a new dimension.
@@ -39,24 +38,11 @@ class TextEncoder(nn.Module):
         )
 
         # Bottleneck structure for augment_linear
-        # if self.is_text_augment:
-        #     self.augment_linear = BottleneckBlock(projection_dim)
-
         if self.is_text_augment:
-            config = LanguageConfig()
-            self.language_query_attn = CrossAttention(
-                encoder_hidden_size=config.hidden_size,
-                num_heads=config.self_attn_heads,
-                hidden_size=config.hidden_size,
-                dropout=config.attn_dropout
-            )
+            input_dim = self.model.config.hidden_size
+            intermediate_dim = input_dim // 2
+            self.augment_linear = BottleneckBlock(input_dim, intermediate_dim)
 
-            self.lang_cross_augment = CrossAugmentation(
-                attn_layer=self.language_query_attn,
-                mlp_layer=MLP(config),
-                norm_layer=nn.LayerNorm(
-                    config.hidden_size, eps=config.layer_norm_eps)
-            )
 
     def forward(self, text_inputs_lst, augment_thresh):
         r = torch.rand(1)
@@ -65,44 +51,23 @@ class TextEncoder(nn.Module):
             embed_lst = []
             for text_inputs in text_inputs_lst:
                 x = self.model(**text_inputs)
-                # x = x['last_hidden_state'][:, 0, :]
-
-                x = x['last_hidden_state']
+                x = x['last_hidden_state'][:, 0, :]
                 embed_lst.append(x)
-
-            # para_features_t = torch.stack(embed_lst, dim=1)
-            # Sum the embeddings along the new dimension
-            # x = torch.sum(para_features_t, dim=1)
-            # x = self.proj(x)
-            # x = self.augment_linear(x)
-
-            ori_embed = embed_lst[0]
-            para_embed = embed_lst[1:]
-
-            for _ in range(1):
-                ori_embed = self.lang_cross_augment(ori_embed, para_embed)
-
-            pooled_output = ori_embed[:, 0, :]
-            x = self.proj(pooled_output)
-
+            x = self.augment_linear(embed_lst[0], embed_lst[1:])
         else:
             text_inputs = text_inputs_lst[0]
             x = self.model(**text_inputs)
             x = x['last_hidden_state'][:, 0, :]
-            x = self.proj(x)
 
-        return x
+        return self.proj(x)
 
 
 class ImageEncoder(nn.Module):
     def __init__(self, img_model, projection_dim):
         super().__init__()
-
         for param in img_model.parameters():
             param.requires_grad = True
-
         self.model = img_model
-
         self.proj = nn.Sequential(
             nn.Linear(self.model.num_features * 7 * 7, projection_dim),
             nn.ReLU()
