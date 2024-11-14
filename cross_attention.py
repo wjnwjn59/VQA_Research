@@ -16,7 +16,7 @@ class LanguageConfig:
     self_attn_heads: int = 8
     attn_dropout: float = 0.1
     mlp_dropout: float = 0.1
-    layer_norm_eps: float = 1e-6  # 1e-6
+    layer_norm_eps: float = 1e-6
 
 
 class CrossAttention(nn.Module):
@@ -97,10 +97,7 @@ class CrossAugmentation(nn.Module):
     def forward(self, query: Tensor, encode_hidden_states: List[Tensor]) -> Tensor:
         for encode_hidden_state in encode_hidden_states:
             attn_output = self.attn(query, encode_hidden_state)
-            query = self.norm(query + attn_output)  # Normalize after attention
+            query = self.norm(query + attn_output)
             mlp_output = self.mlp(query)
-            query = self.norm(query + mlp_output)  # Normalize after MLP
-
-            # query = self.norm(query + self.attn(query, encode_hidden_state))
-            # query = self.norm(query + self.mlp(query))
+            query = self.norm(query + mlp_output)
         return query
