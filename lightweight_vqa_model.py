@@ -1,46 +1,22 @@
 import torch
 import torch.nn as nn
-import numpy as np
 from torch.functional import F
 from cross_attention import *
 
 
-class BottleneckBlock(nn.Module):
-    def __init__(self, input_dim):
-        super().__init__()
-        self.proj = nn.Sequential(
-            nn.Linear(input_dim, input_dim // 2),
-            nn.ReLU(),
-            nn.Linear(input_dim // 2, input_dim),
-        )
-        # self.norm = nn.LayerNorm(input_dim)
-
-    def forward(self, x):
-        x = self.proj(x) + x
-        # x = self.norm(x)
-        return x
-
-
-# Define a Text Encoder class that handles the text input and projects it into a new dimension.
 class TextEncoder(nn.Module):
     def __init__(self, text_model, projection_dim, is_text_augment):
         super().__init__()
 
-        # Enable gradient updates for the text model
         for param in text_model.parameters():
             param.requires_grad = True
 
-        self.is_text_augment = is_text_augment  # Flag for augmenting text data
-        self.model = text_model  # Text model
-
+        self.is_text_augment = is_text_augment
+        self.model = text_model
         self.proj = nn.Sequential(
             nn.Linear(self.model.config.hidden_size, projection_dim),
             nn.ReLU()
         )
-
-        # Bottleneck structure for augment_linear
-        # if self.is_text_augment:
-        #     self.augment_linear = BottleneckBlock(projection_dim)
 
         if self.is_text_augment:
             config = LanguageConfig()
@@ -65,16 +41,7 @@ class TextEncoder(nn.Module):
             embed_lst = []
             for text_inputs in text_inputs_lst:
                 x = self.model(**text_inputs)
-                # x = x['last_hidden_state'][:, 0, :]
-
-                x = x['last_hidden_state']
-                embed_lst.append(x)
-
-            # para_features_t = torch.stack(embed_lst, dim=1)
-            # Sum the embeddings along the new dimension
-            # x = torch.sum(para_features_t, dim=1)
-            # x = self.proj(x)
-            # x = self.augment_linear(x)
+                embed_lst.append(x['last_hidden_state'])
 
             ori_embed = embed_lst[0]
             para_embed = embed_lst[1:]
@@ -132,14 +99,11 @@ class Classifier(nn.Module):
         return x
 
 
-# Main model class combining text, image encoders, and classifier for VQA (Visual Question Answering)
 class ViVQAModel(nn.Module):
     def __init__(self, projection_dim, hidden_dim, answer_space_len,
                  text_encoder_dict, img_encoder_dict,
-                 is_text_augment=True,
-                 total_epochs=100, use_dynamic_thresh=True,
-                 start_threshold=0.6, update_threshold_method='linear', init_learning_rate=1e-5,
-                 text_para_thresh=0.6):
+                 is_text_augment=True, text_para_thresh=0.6,
+                 total_epochs=100, use_dynamic_thresh=True, start_threshold=0.6):
 
         super().__init__()
 
@@ -157,22 +121,19 @@ class ViVQAModel(nn.Module):
         self.use_dynamic_thresh = use_dynamic_thresh
         self.text_para_thresh = text_para_thresh
         self.total_epochs = total_epochs
-        self.first_loss = 0
         self.current_epoch = 0
-        self.update_threshold_method = update_threshold_method
         self.start_threshold = start_threshold
-        self.min_threshold = 0.01
+        self.min_threshold = 0.0
 
-        self.init_learning_rate = init_learning_rate
 
     def get_threshold(self):
         if not self.use_dynamic_thresh:
             return self.text_para_thresh
 
         decay = (self.start_threshold - self.min_threshold) * \
-            (self.current_epoch / self.total_epochs)  # 0.6 * 1/30
+            (self.current_epoch / self.total_epochs)
         updated_thresh = max(self.start_threshold -
-                                decay, self.min_threshold)
+                             decay, self.min_threshold)
 
         return updated_thresh
 

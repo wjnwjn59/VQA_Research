@@ -24,26 +24,16 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 
 def set_seed(random_seed):
-    # Set seed for random module
     random.seed(random_seed)
-    # Set seed for random module
     np.random.seed(random_seed)
-    # Set seed for PyTorch
     torch.manual_seed(random_seed)
-    # Set seed for current CUDA device
     torch.cuda.manual_seed(random_seed)
-    # Set seed for all CUDA devices
     torch.cuda.manual_seed_all(random_seed)
-    # Enable deterministic mode
     torch.backends.cudnn.deterministic = True
-    # Enforce deterministic behavior
     torch.use_deterministic_algorithms(True)
-    # Disable benchmark for reproducibility
     torch.backends.cudnn.benchmark = False
     os.environ['PYTHONHASHSEED'] = str(random_seed)
-    # Set CUBLAS workspace config
     os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
-    # Ensure cuDNN is deterministic
     os.environ['CUDNN_DETERMINISTIC'] = '1'
 
 
@@ -62,7 +52,6 @@ def save_model(save_path, model):
     except AttributeError:
         model_state_dict = model.state_dict()
 
-    # Create a checkpoint dictionary
     checkpoint = {
         'model': model_state_dict,
     }
@@ -220,8 +209,6 @@ def parse_args():
     parser = argparse.ArgumentParser(description='ViVQA Training Script')
     parser.add_argument('--seed', type=int,
                         default=pipeline_config.seed, help='Random seed')
-    parser.add_argument('--gpus', type=str, default='0',
-                        help='Indices of GPUs used count from 0')
     parser.add_argument('--project_name', type=str,
                         default='vivqa_paraphrase_augmentation_new', help='Project name for wandb')
     parser.add_argument('--exp_name', type=str,
@@ -262,8 +249,6 @@ def parse_args():
                         default=pipeline_config.use_dynamic_thresh, help='Use dynamic threshold scaled by epochs')
     parser.add_argument('--start_threshold', type=float,
                         default=pipeline_config.start_threshold, help='Start dynamic threshold value')
-    parser.add_argument('--update_threshold_method', type=str, default='linear',
-                        help='Update dynamic threshold with specified method')
     parser.add_argument('--save_ckpt_dir', type=str,
                         default='runs/train', help='Directory to save checkpoints')
     parser.add_argument('--is_log_result', type=lambda x: (str(x).lower() ==
@@ -302,7 +287,6 @@ def main():
                        total_epochs=args.epochs,
                        use_dynamic_thresh=args.use_dynamic_thresh,
                        start_threshold=args.start_threshold,
-                       update_threshold_method=args.update_threshold_method,
                        text_para_thresh=args.text_para_thresh
                        )
 
@@ -331,8 +315,8 @@ def main():
     train_loader = DataLoader(train_dataset,
                               batch_size=args.train_batch_size,
                               pin_memory=True,
-                              #   num_workers=1,
-                              #   multiprocessing_context='spawn',
+
+
                               shuffle=True)
 
     test_loader = DataLoader(test_dataset,
@@ -341,12 +325,7 @@ def main():
                              shuffle=False)
 
     if not args.exp_name:
-        text_augment_info = f'istextaug{args.is_text_augment}_ntextpara{args.n_text_paras}_random{args.text_para_thresh}_nparapool{args.n_text_para_pool}'
-        # text_augment_info = f'istextaug{args.is_text_augment}'
-        # img_augment_info = f'isimgaug{args.is_img_augment}'
-        # exp_name = f'phase6_seed{args.seed}_{args.dataset_name}_curr{args.use_dynamic_thresh}&0.6_{text_augment_info}_{img_augment_info}'
-        exp_name = f'CrossAttention_ConfigSetting'
-        # exp_name = f'norm_seed{args.seed}_{args.dataset_name}_{text_augment_info}'
+        exp_name = f'CrossAttention_DefaultConfig'
     else:
         exp_name = args.exp_name
 

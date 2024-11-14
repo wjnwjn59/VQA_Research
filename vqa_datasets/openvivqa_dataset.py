@@ -1,9 +1,7 @@
 import os
 import json
-import ast
 import random
 import torch
-import pandas as pd
 
 from PIL import Image
 from torch.utils.data import Dataset
