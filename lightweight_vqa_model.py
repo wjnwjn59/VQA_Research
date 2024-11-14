@@ -169,59 +169,12 @@ class ViVQAModel(nn.Module):
         if not self.use_dynamic_thresh:
             return self.text_para_thresh
 
-        if self.update_threshold_method == 'linear':
-            # Linear threshold
-            decay = (self.start_threshold - self.min_threshold) * \
-                (self.current_epoch / self.total_epochs)  # 0.6 * 1/30
-            updated_thresh = max(self.start_threshold -
-                                 decay, self.min_threshold)
-
-        elif self.update_threshold_method == 'exponential_epoch':
-            # Exponent threshold base on Epoch
-            k = (-1/self.total_epochs) * \
-                np.log(self.min_threshold/self.start_threshold)
-            k /= 3
-            updated_thresh = max(
-                self.start_threshold * np.exp(-k * self.current_epoch), self.min_threshold)
-
-        elif self.update_threshold_method == 'exponential_loss':
-            if self.current_epoch == 0:
-                return self.text_para_thresh, self.img_augment_thresh
-
-            # Exponent threshold base on Loss
-            k = (-1 / self.first_loss) * \
-                np.log(self.min_threshold / self.start_threshold)
-            k /= 3
-            updated_thresh = max(self.start_threshold * np.exp(-k *
-                                 (self.first_loss - self.current_loss)), self.min_threshold)
-
-        elif self.update_threshold_method == 'sigmoid_epoch':
-            # Sigmoid threshold base on Epoch
-            k = 2 * np.log((1 / self.min_threshold) - 1) / self.total_epochs
-            updated_thresh = max(self.start_threshold / (1 + np.exp(
-                k * (self.current_epoch - (self.total_epochs / 2)))), self.min_threshold)
-
-        else:
-            raise ValueError(
-                "Invalid update_threshold_method. Please choose 'linear', 'exponential_epoch', 'exponential_loss' or 'sigmoid_epoch'.")
+        decay = (self.start_threshold - self.min_threshold) * \
+            (self.current_epoch / self.total_epochs)  # 0.6 * 1/30
+        updated_thresh = max(self.start_threshold -
+                                decay, self.min_threshold)
 
         return updated_thresh
-
-    def get_learning_rate(self):
-        if self.current_epoch == 0:
-            return self.init_learning_rate
-
-        # Linear learning rate decay
-        # decay = (self.init_learning_rate - self.init_learning_rate/10) * (self.current_epoch / self.total_epochs)
-        # updated_lr = max(self.init_learning_rate - decay, self.init_learning_rate / 10)
-
-        k = (-1 / self.first_loss) * \
-            np.log((self.init_learning_rate/10) / self.init_learning_rate)
-        k /= 3
-        updated_lr = max(self.init_learning_rate * np.exp(-k *
-                         (self.first_loss - self.current_loss)), self.min_threshold)
-
-        return updated_lr
 
     def forward(self, text_inputs, img_inputs):
         text_thresh = self.get_threshold()
@@ -235,8 +188,3 @@ class ViVQAModel(nn.Module):
 
     def update_epoch(self, epoch):
         self.current_epoch = epoch
-
-    def update_loss(self, loss):
-        if self.current_epoch == 0:
-            self.first_loss = loss
-        self.current_loss = loss
