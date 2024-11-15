@@ -1,7 +1,23 @@
 import torch
 import torch.nn as nn
 from torch.functional import F
-from cross_attention import *
+
+
+class BottleneckBlock(nn.Module):
+    def __init__(self, projection_dim, intermediate_dim):
+        super().__init__()
+        self.proj_in_ori = nn.Linear(projection_dim, intermediate_dim)
+        self.proj_in_para = nn.Linear(projection_dim, intermediate_dim)
+        self.proj_out = nn.Linear(intermediate_dim, projection_dim)
+        self.relu = nn.ReLU()
+
+    def forward(self, x_ori, x_paras):
+        x = self.proj_in_ori(x_ori)
+        for x_para in x_paras:
+            x += self.proj_in_para(x_para)
+        x = self.proj_out(x)
+        x = self.relu(x) + x_ori
+        return x
 
 
 class TextEncoder(nn.Module):
@@ -19,38 +35,24 @@ class TextEncoder(nn.Module):
         )
 
         if self.is_text_augment:
-            config = LanguageConfig()
-            self.language_query_attn = CrossAttention(
-                encoder_hidden_size=config.hidden_size,
-                num_heads=config.self_attn_heads,
-                hidden_size=config.hidden_size,
-                dropout=config.attn_dropout
-            )
-
-            self.lang_cross_augment = CrossAugmentation(
-                attn_layer=self.language_query_attn,
-                mlp_layer=MLP(config),
-                norm_layer=nn.LayerNorm(
-                    config.hidden_size, eps=config.layer_norm_eps)
-            )
+            self.BB = BottleneckBlock(
+                self.model.config.hidden_size, self.model.config.hidden_size // 2)
 
     def forward(self, text_inputs_lst, augment_thresh):
         r = torch.rand(1)
         if self.training and self.is_text_augment and r < augment_thresh:
-
             embed_lst = []
+
             for text_inputs in text_inputs_lst:
                 x = self.model(**text_inputs)
-                embed_lst.append(x['last_hidden_state'])
+                embed_lst.append(x['last_hidden_state'][:, 0, :])
 
             ori_embed = embed_lst[0]
             para_embed = embed_lst[1:]
 
-            for _ in range(1):
-                ori_embed = self.lang_cross_augment(ori_embed, para_embed)
+            ori_embed = self.BB(ori_embed, para_embed)
 
-            pooled_output = ori_embed[:, 0, :]
-            x = self.proj(pooled_output)
+            x = self.proj(ori_embed)
 
         else:
             text_inputs = text_inputs_lst[0]
@@ -124,7 +126,6 @@ class ViVQAModel(nn.Module):
         self.current_epoch = 0
         self.start_threshold = start_threshold
         self.min_threshold = 0.0
-
 
     def get_threshold(self):
         if not self.use_dynamic_thresh:
