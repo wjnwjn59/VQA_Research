@@ -46,19 +46,6 @@ def set_threads(n_threads, is_print_available_threads=False):
     torch.set_num_interop_threads(n_threads)
 
 
-def save_model(save_path, model):
-    try:
-        model_state_dict = model.module.state_dict()
-    except AttributeError:
-        model_state_dict = model.state_dict()
-
-    checkpoint = {
-        'model': model_state_dict,
-    }
-
-    torch.save(checkpoint, save_path)
-
-
 def free_vram(model, optimizer, scaler):
     del model
     del optimizer
@@ -80,7 +67,8 @@ def train(model,
           is_log_result=True,
           use_amp=True):
 
-    best_val_loss = np.inf
+    loss_best_val_acc = np.inf
+    best_val_acc = 0
     epochs_no_improve = 0
 
     train_loss_lst = []
@@ -175,8 +163,6 @@ def train(model,
         val_acc_lst.append(val_acc)
         val_cider_lst.append(val_cider)
 
-        model.update_loss(val_loss)
-
         if is_log_result:
             log_data = {
                 'epoch': epoch + 1,
@@ -190,11 +176,10 @@ def train(model,
 
             wandb.log(log_data)
 
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            loss_best_val_acc = val_loss
             epochs_no_improve = 0
-            save_model(save_best_path, model, optimizer,
-                       scaler)
         else:
             epochs_no_improve += 1
             if epochs_no_improve >= patience:
@@ -202,7 +187,7 @@ def train(model,
                     f'Early stopping triggered after {epochs_no_improve} epochs without improvement.')
                 break
 
-    return train_loss_lst, train_acc_lst, train_cider_lst, val_loss_lst, val_acc_lst, val_cider_lst
+    return train_loss_lst, train_acc_lst, train_cider_lst, val_loss_lst, val_acc_lst, val_cider_lst, best_val_acc, loss_best_val_acc
 
 
 def parse_args():
@@ -210,7 +195,7 @@ def parse_args():
     parser.add_argument('--seed', type=int,
                         default=pipeline_config.seed, help='Random seed')
     parser.add_argument('--project_name', type=str,
-                        default='vivqa_paraphrase_augmentation_new', help='Project name for wandb')
+                        default='vivqa_paraphrase_augmentation_bb', help='Project name for wandb')
     parser.add_argument('--exp_name', type=str,
                         help='Experiment name for wandb')
     parser.add_argument('--dataset_name', default=pipeline_config.dataset_name,
@@ -245,6 +230,8 @@ def parse_args():
                         default=pipeline_config.text_para_thresh, help='Paraphrase threshold')
     parser.add_argument('--n_text_para_pool', type=int, default=pipeline_config.n_text_para_pool,
                         help='The number of paraphrase in the paraphrase pool')
+    parser.add_argument('--is_filter', type=lambda x: (str(x).lower() == 'true'),
+                        default=pipeline_config.is_filter, help='Filtered paraphrases')
     parser.add_argument('--use_dynamic_thresh', type=lambda x: (str(x).lower() == 'true'),
                         default=pipeline_config.use_dynamic_thresh, help='Use dynamic threshold scaled by epochs')
     parser.add_argument('--start_threshold', type=float,
@@ -261,7 +248,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-
+    print(args.is_filter)
     set_seed(args.seed)
     set_threads(4)
 
@@ -340,62 +327,30 @@ def main():
     os.makedirs(weights_dirname, exist_ok=True)
     save_best_path = f'./{weights_dirname}/{exp_name}_best.pt'
 
-    train_loss_lst, train_acc_lst, train_cider_lst, val_loss_lst, val_acc_lst, val_cider_lst = train(model,
-                                                                                                     train_loader,
-                                                                                                     test_loader,
-                                                                                                     epochs=args.epochs,
-                                                                                                     criterion=criterion,
-                                                                                                     optimizer=optimizer,
-                                                                                                     scaler=scaler,
-                                                                                                     dataset_name=args.dataset_name,
-                                                                                                     idx2label=idx2label,
-                                                                                                     patience=args.patience,
-                                                                                                     save_best_path=save_best_path,
-                                                                                                     is_log_result=args.is_log_result,
-                                                                                                     use_amp=args.use_amp)
+    train_loss_lst, train_acc_lst, train_cider_lst, val_loss_lst, val_acc_lst, val_cider_lst, best_val_acc, loss_best_val_acc = train(model,
+                                                                                                                                      train_loader,
+                                                                                                                                      test_loader,
+                                                                                                                                      epochs=args.epochs,
+                                                                                                                                      criterion=criterion,
+                                                                                                                                      optimizer=optimizer,
+                                                                                                                                      scaler=scaler,
+                                                                                                                                      dataset_name=args.dataset_name,
+                                                                                                                                      idx2label=idx2label,
+                                                                                                                                      patience=args.patience,
+                                                                                                                                      save_best_path=save_best_path,
+                                                                                                                                      is_log_result=args.is_log_result,
+                                                                                                                                      use_amp=args.use_amp)
 
     free_vram(model, optimizer, scaler)
-
-    best_model = ViVQAModel(projection_dim=args.projection_dim,
-                            hidden_dim=args.hidden_dim,
-                            answer_space_len=answer_space_len,
-                            text_encoder_dict=text_encoder_dict,
-                            img_encoder_dict=img_encoder_dict,
-                            is_text_augment=args.is_text_augment).to(device)
-
-    dev = torch.cuda.current_device()
-    checkpoint = torch.load(save_best_path,
-                            weights_only=True,
-                            map_location=lambda storage, loc: storage.cuda(dev))
-
-    state_dict = checkpoint['model']
-    new_state_dict = {}
-    for key, value in state_dict.items():
-        new_key = key.replace("_orig_mod.", "")
-        new_state_dict[new_key] = value
-
-    best_model.load_state_dict(new_state_dict)
-
-    test_loss, test_acc, test_cider = evaluate(model=best_model,
-                                               val_loader=test_loader,
-                                               criterion=criterion,
-                                               idx2label=idx2label,
-                                               dataset_name=args.dataset_name)
-
-    test_loss = round(test_loss, 4)
-    test_acc = round(test_acc, 4) if test_acc > 0 else test_acc
-    test_cider = round(test_cider, 4) if test_cider > 0 else test_cider
 
     args_dict = vars(args)
     if args.is_log_result:
         exp_table = wandb.Table(
             columns=list(args_dict.keys()) +
-            ['test_loss', 'test_acc', 'test_cider'],
-            data=[list(args_dict.values()) + [test_loss, test_acc, test_cider]]
+            ['test_loss', 'test_acc'],
+            data=[list(args_dict.values()) + [loss_best_val_acc, best_val_acc]]
         )
         wandb.log({"Exp_table": exp_table})
-
-    print(f'Test acc: {test_acc}\tTest loss: {test_loss}')
 
 
 if __name__ == '__main__':
