@@ -12,8 +12,8 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class ViVQADataset(Dataset):
     def __init__(self, data_dir, data_mode, text_encoder_dict, img_encoder_dict,
-                 label_encoder=None, is_text_augment=True,
-                 n_text_paras=3, text_para_thresh=0.9, n_para_pool=20
+                 label_encoder=None, is_text_augment=True, is_filter=False,
+                 n_text_paras=2, text_para_thresh=0.5, n_para_pool=30
                  ):
         self.data_dir = data_dir
         self.data_mode = data_mode
@@ -21,15 +21,22 @@ class ViVQADataset(Dataset):
         self.is_text_augment = is_text_augment
         self.n_text_paras = n_text_paras
         self.text_para_thresh = text_para_thresh
+        self.is_filter = is_filter
 
         if self.data_mode == 'train':
-            train_filename = f'{n_para_pool}_filtered_paraphrases_train.csv'
+            if self.is_filter:
+                print('Using Filter for paraphrases')
+                train_filename = f'{n_para_pool}_filtered_paraphrases_train.csv'
+            else:
+                print('No Filter for paraphrases')
+                train_filename = f'{n_para_pool}_paraphrases_train.csv'
+
             data_path = os.path.join(data_dir, 'ViVQA', train_filename)
             if not os.path.exists(data_path):
                 print(
                     'Data training file with number of paraphrases pool not found! Select default (20) file.')
                 data_path = os.path.join(
-                    data_dir, 'ViVQA', '20_paraphrases_train.csv')
+                    data_dir, 'ViVQA', '30_paraphrases_train.csv')
             self.data_path = data_path
         else:
             self.data_path = os.path.join(data_dir, 'ViVQA', 'test.csv')
