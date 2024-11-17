@@ -1,22 +1,20 @@
 import torch
 import torch.nn as nn
+
 from torch.functional import F
 
 
 class BottleneckBlock(nn.Module):
-    def __init__(self, projection_dim, intermediate_dim):
+    def __init__(self, input_dim):
         super().__init__()
-        self.proj_in_ori = nn.Linear(projection_dim, intermediate_dim)
-        self.proj_in_para = nn.Linear(projection_dim, intermediate_dim)
-        self.proj_out = nn.Linear(intermediate_dim, projection_dim)
-        self.relu = nn.ReLU()
+        self.proj = nn.Sequential(
+            nn.Linear(input_dim, input_dim // 2),
+            nn.ReLU(),
+            nn.Linear(input_dim // 2, input_dim),
+        )
 
-    def forward(self, x_ori, x_paras):
-        x = self.proj_in_ori(x_ori)
-        for x_para in x_paras:
-            x += self.proj_in_para(x_para)
-        x = self.proj_out(x)
-        x = self.relu(x) + x_ori
+    def forward(self, x):
+        x = self.proj(x) + x
         return x
 
 
@@ -35,24 +33,20 @@ class TextEncoder(nn.Module):
         )
 
         if self.is_text_augment:
-            self.BB = BottleneckBlock(
-                self.model.config.hidden_size, self.model.config.hidden_size // 2)
+            self.augment_linear = BottleneckBlock(projection_dim)
 
     def forward(self, text_inputs_lst, augment_thresh):
         r = torch.rand(1)
         if self.training and self.is_text_augment and r < augment_thresh:
             embed_lst = []
-
             for text_inputs in text_inputs_lst:
                 x = self.model(**text_inputs)
                 embed_lst.append(x['last_hidden_state'][:, 0, :])
 
-            ori_embed = embed_lst[0]
-            para_embed = embed_lst[1:]
-
-            ori_embed = self.BB(ori_embed, para_embed)
-
-            x = self.proj(ori_embed)
+            para_features_t = torch.stack(embed_lst, dim=1)
+            x = torch.sum(para_features_t, dim=1)
+            x = self.proj(x)
+            x = self.augment_linear(x)
 
         else:
             text_inputs = text_inputs_lst[0]
@@ -69,7 +63,6 @@ class ImageEncoder(nn.Module):
 
         for param in img_model.parameters():
             param.requires_grad = True
-
         self.model = img_model
 
         self.proj = nn.Sequential(
