@@ -7,9 +7,6 @@ import pandas as pd
 import json
 import os
 
-os.environ["CUDA_VISIBLE_DEVICES"] = '2'
-os.environ["WORLD_SIZE"] = '1'
-
 
 def set_seed(random_seed):
     torch.cuda.manual_seed(random_seed)

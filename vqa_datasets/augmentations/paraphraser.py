@@ -12,6 +12,8 @@ paraphraser_tokenizer = MT5Tokenizer.from_pretrained(PARAPHRASER_ID)
 paraphraser_model = MT5ForConditionalGeneration.from_pretrained(
     PARAPHRASER_ID).to(device)
 
+sbert_model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
+
 
 def get_paraphrase(text, num_return_sequences):
     inputs = paraphraser_tokenizer(text,
@@ -58,14 +60,14 @@ def knn_filter(origin, para_lst, from_index, ktop):
 
 
 def sbert_filter(origin, para_lst, from_index, ktop):
-    collection = [origin] + para_lst
-
-    model = SentenceTransformer('paraphrase-MiniLM-L6-v2')
     paraphrase_with_scores = []
 
-    for para in para_lst:
-        score = util.cos_sim(model.encode(origin), model.encode(para)).item()
-        paraphrase_with_scores.append((para, score))
+    ori_encode = sbert_model.encode(origin)
+    paras_encode = sbert_model.encode(para_lst)
+
+    for idx in range(len(paras_encode)):
+        score = util.cos_sim(ori_encode, paras_encode[idx]).item()
+        paraphrase_with_scores.append((para_lst[idx], score))
 
     paraphrase_with_scores_sorted = sorted(
         paraphrase_with_scores, key=lambda x: x[1], reverse=True)
