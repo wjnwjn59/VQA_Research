@@ -117,15 +117,15 @@ def train(model,
             total_samples += total_batch_samples
             total_loss += batch_loss_sum
 
-            if dataset_name == 'openvivqa':
-                pred_texts = [idx2label[pred.item()] for pred in preds]
-                label_texts = [idx2label[label.item()] for label in labels]
+            # if dataset_name == 'openvivqa':
+            #     pred_texts = [idx2label[pred.item()] for pred in preds]
+            #     label_texts = [idx2label[label.item()] for label in labels]
 
-                all_predictions += pred_texts
-                all_references += label_texts
-            else:
-                correct = (preds == labels).sum().item()
-                total_correct += correct
+            #     all_predictions += pred_texts
+            #     all_references += label_texts
+            # else:
+            correct = (preds == labels).sum().item()
+            total_correct += correct
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -146,15 +146,15 @@ def train(model,
         print(
             f'EPOCH {epoch + 1}: Train loss: {train_loss:.4f}\tVal loss: {val_loss:.4f}')
 
-        if dataset_name == 'openvivqa':
-            train_acc = -1
-            train_cider = compute_cider(all_predictions, all_references)
-            print(
-                f'Train CIDEr: {train_cider:.4f}\tVal CIDEr: {val_cider:.4f}')
-        else:
-            train_acc = total_correct / total_samples
-            train_cider = -1
-            print(f'Train acc: {train_acc:.4f}\tVal acc: {val_acc:.4f}')
+        # if dataset_name == 'openvivqa':
+        #     train_acc = -1
+        #     train_cider = compute_cider(all_predictions, all_references)
+        #     print(
+        #         f'Train CIDEr: {train_cider:.4f}\tVal CIDEr: {val_cider:.4f}')
+        # else:
+        train_acc = total_correct / total_samples
+        train_cider = -1
+        print(f'Train acc: {train_acc:.4f}\tVal acc: {val_acc:.4f}')
 
         train_loss_lst.append(train_loss)
         train_acc_lst.append(train_acc)
@@ -163,18 +163,17 @@ def train(model,
         val_acc_lst.append(val_acc)
         val_cider_lst.append(val_cider)
 
-        if is_log_result:
-            log_data = {
-                'epoch': epoch + 1,
-                'train_loss': train_loss,
-                'train_acc': train_acc,
-                'train_cider': train_cider,
-                'val_loss': val_loss,
-                'val_acc': val_acc,
-                'val_cider': val_cider
-            }
-
-            wandb.log(log_data)
+        # if is_log_result:
+        log_data = {
+            'epoch': epoch + 1,
+            'train_loss': train_loss,
+            'train_acc': train_acc,
+            'train_cider': train_cider,
+            'val_loss': val_loss,
+            'val_acc': val_acc,
+            'val_cider': val_cider
+        }
+        wandb.log(log_data)
 
         if val_acc > best_val_acc:
             best_val_acc = val_acc
@@ -344,13 +343,14 @@ def main():
     free_vram(model, optimizer, scaler)
 
     args_dict = vars(args)
-    if args.is_log_result:
-        exp_table = wandb.Table(
-            columns=list(args_dict.keys()) +
-            ['test_loss', 'test_acc'],
-            data=[list(args_dict.values()) + [loss_best_val_acc, best_val_acc]]
-        )
-        wandb.log({"Exp_table": exp_table})
+    
+    # if args.is_log_result:
+    exp_table = wandb.Table(
+        columns=list(args_dict.keys()) +
+        ['test_loss', 'test_acc'],
+        data=[list(args_dict.values()) + [loss_best_val_acc, best_val_acc]]
+    )
+    wandb.log({"Exp_table": exp_table})
 
 
 if __name__ == '__main__':
