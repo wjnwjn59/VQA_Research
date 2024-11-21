@@ -13,10 +13,13 @@ class BottleneckBlock(nn.Module):
 
     def forward(self, x_ori, x_paras):
         x = self.proj_in_ori(x_ori)
+
         for x_para in x_paras:
             x += self.proj_in_para(x_para)
+
         x = self.proj_out(x)
         x = self.relu(x) + x_ori
+
         return x
 
 
@@ -50,9 +53,8 @@ class TextEncoder(nn.Module):
             ori_embed = embed_lst[0]
             para_embed = embed_lst[1:]
 
-            ori_embed = self.BB(ori_embed, para_embed)
-
-            x = self.proj(ori_embed)
+            aug_embed = self.BB(ori_embed, para_embed)
+            x = self.proj(aug_embed)
 
         else:
             text_inputs = text_inputs_lst[0]
@@ -105,7 +107,8 @@ class ViVQAModel(nn.Module):
     def __init__(self, projection_dim, hidden_dim, answer_space_len,
                  text_encoder_dict, img_encoder_dict,
                  is_text_augment=True, text_para_thresh=0.6,
-                 total_epochs=100, use_dynamic_thresh=True, start_threshold=0.6):
+                 total_epochs=100, use_dynamic_thresh=True,
+                 start_threshold=0.6, min_threshold=0.0):
 
         super().__init__()
 
@@ -125,7 +128,7 @@ class ViVQAModel(nn.Module):
         self.total_epochs = total_epochs
         self.current_epoch = 0
         self.start_threshold = start_threshold
-        self.min_threshold = 0.0
+        self.min_threshold = min_threshold
 
     def get_threshold(self):
         if not self.use_dynamic_thresh:
