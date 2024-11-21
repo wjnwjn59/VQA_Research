@@ -67,8 +67,9 @@ def train(model,
           is_log_result=True,
           use_amp=True):
 
-    loss_best_val_acc = np.inf
-    best_val_acc = 0
+    best_val_loss = np.inf
+    acc_best_val_loss = 0
+
     epochs_no_improve = 0
 
     train_loss_lst = []
@@ -117,15 +118,15 @@ def train(model,
             total_samples += total_batch_samples
             total_loss += batch_loss_sum
 
-            # if dataset_name == 'openvivqa':
-            #     pred_texts = [idx2label[pred.item()] for pred in preds]
-            #     label_texts = [idx2label[label.item()] for label in labels]
+            if dataset_name == 'openvivqa':
+                pred_texts = [idx2label[pred.item()] for pred in preds]
+                label_texts = [idx2label[label.item()] for label in labels]
 
-            #     all_predictions += pred_texts
-            #     all_references += label_texts
-            # else:
-            correct = (preds == labels).sum().item()
-            total_correct += correct
+                all_predictions += pred_texts
+                all_references += label_texts
+            else:
+                correct = (preds == labels).sum().item()
+                total_correct += correct
 
             scaler.scale(loss).backward()
             scaler.step(optimizer)
@@ -146,15 +147,15 @@ def train(model,
         print(
             f'EPOCH {epoch + 1}: Train loss: {train_loss:.4f}\tVal loss: {val_loss:.4f}')
 
-        # if dataset_name == 'openvivqa':
-        #     train_acc = -1
-        #     train_cider = compute_cider(all_predictions, all_references)
-        #     print(
-        #         f'Train CIDEr: {train_cider:.4f}\tVal CIDEr: {val_cider:.4f}')
-        # else:
-        train_acc = total_correct / total_samples
-        train_cider = -1
-        print(f'Train acc: {train_acc:.4f}\tVal acc: {val_acc:.4f}')
+        if dataset_name == 'openvivqa':
+            train_acc = -1
+            train_cider = compute_cider(all_predictions, all_references)
+            print(
+                f'Train CIDEr: {train_cider:.4f}\tVal CIDEr: {val_cider:.4f}')
+        else:
+            train_acc = total_correct / total_samples
+            train_cider = -1
+            print(f'Train acc: {train_acc:.4f}\tVal acc: {val_acc:.4f}')
 
         train_loss_lst.append(train_loss)
         train_acc_lst.append(train_acc)
@@ -163,7 +164,6 @@ def train(model,
         val_acc_lst.append(val_acc)
         val_cider_lst.append(val_cider)
 
-        # if is_log_result:
         log_data = {
             'epoch': epoch + 1,
             'train_loss': train_loss,
@@ -175,9 +175,9 @@ def train(model,
         }
         wandb.log(log_data)
 
-        if val_acc > best_val_acc:
-            best_val_acc = val_acc
-            loss_best_val_acc = val_loss
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            acc_best_val_loss = val_acc
             epochs_no_improve = 0
         else:
             epochs_no_improve += 1
@@ -186,7 +186,7 @@ def train(model,
                     f'Early stopping triggered after {epochs_no_improve} epochs without improvement.')
                 break
 
-    return train_loss_lst, train_acc_lst, train_cider_lst, val_loss_lst, val_acc_lst, val_cider_lst, best_val_acc, loss_best_val_acc
+    return train_loss_lst, train_acc_lst, train_cider_lst, val_loss_lst, val_acc_lst, val_cider_lst, acc_best_val_loss, best_val_loss
 
 
 def parse_args():
@@ -235,6 +235,8 @@ def parse_args():
                         default=pipeline_config.use_dynamic_thresh, help='Use dynamic threshold scaled by epochs')
     parser.add_argument('--start_threshold', type=float,
                         default=pipeline_config.start_threshold, help='Start dynamic threshold value')
+    parser.add_argument('--min_threshold', type=float,
+                        default=pipeline_config.min_threshold, help='Min threshold value')
     parser.add_argument('--save_ckpt_dir', type=str,
                         default='runs/train', help='Directory to save checkpoints')
     parser.add_argument('--is_log_result', type=lambda x: (str(x).lower() ==
@@ -273,6 +275,7 @@ def main():
                        total_epochs=args.epochs,
                        use_dynamic_thresh=args.use_dynamic_thresh,
                        start_threshold=args.start_threshold,
+                       min_threshold=args.min_threshold,
                        text_para_thresh=args.text_para_thresh
                        )
 
@@ -343,8 +346,7 @@ def main():
     free_vram(model, optimizer, scaler)
 
     args_dict = vars(args)
-    
-    # if args.is_log_result:
+
     exp_table = wandb.Table(
         columns=list(args_dict.keys()) +
         ['test_loss', 'test_acc'],
