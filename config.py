@@ -19,6 +19,7 @@ class PipelineConfig:
         self.text_para_thresh = 0.8
         self.n_text_para_pool = 30
         self.start_threshold = 0.6
+        self.min_threshold = 0.0
         self.is_filter = True
         self.use_dynamic_thresh = False
         self.dataset_name = 'vivqa'
