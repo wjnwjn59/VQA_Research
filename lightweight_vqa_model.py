@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 from torch.functional import F
@@ -105,10 +106,11 @@ class Classifier(nn.Module):
 
 class ViVQAModel(nn.Module):
     def __init__(self, projection_dim, hidden_dim, answer_space_len,
-                 text_encoder_dict, img_encoder_dict,
+                 text_encoder_dict, img_encoder_dict, steps_per_epoch,
                  is_text_augment=True, text_para_thresh=0.6,
                  total_epochs=100, use_dynamic_thresh=True,
-                 start_threshold=0.6, min_threshold=0.0):
+                 start_threshold=0.6, min_threshold=0.0,
+                 restart_threshold=True, restart_epoch=5):
 
         super().__init__()
 
@@ -126,11 +128,16 @@ class ViVQAModel(nn.Module):
         self.use_dynamic_thresh = use_dynamic_thresh
         self.text_para_thresh = text_para_thresh
         self.total_epochs = total_epochs
-        self.current_epoch = 0
         self.start_threshold = start_threshold
         self.min_threshold = min_threshold
+        self.restart_threshold = restart_threshold
+        self.restart_epoch = restart_epoch
+        self.steps_per_epoch = steps_per_epoch
 
-    def get_threshold(self):
+        self.current_epoch = 0
+        self.current_iterate = 0
+
+    def get_threshold_linear(self):
         if not self.use_dynamic_thresh:
             return self.text_para_thresh
 
@@ -141,8 +148,43 @@ class ViVQAModel(nn.Module):
 
         return updated_thresh
 
+    def get_threshold_cosine(self):
+        """
+        Get dynamic threshold (cosine annealing) for augmentation.
+
+        Args:
+            current_epoch (int): Current epoch.
+            current_iterate (int): Current iteration.
+            steps_per_epoch (int): Steps per epoch, eg. len(train_loader).
+            min_threshold (float): Minimum threshold value.
+            start_threshold (float): Maximum threshold value.
+            restart_threshold (bool): Restart threshold calculation.
+            restart_epoch (int): Restart epoch.
+            use_dynamic_thresh (bool): Whether to use dynamic thresholding.
+
+        Returns:
+            float: Threshold value.
+        """
+
+        if not self.use_dynamic_thresh:
+            return self.start_threshold
+
+        if self.restart_threshold:
+            t_cur = (self.current_epoch % self.restart_epoch) * \
+                self.steps_per_epoch + self.current_iterate
+            t_max = self.restart_epoch * self.steps_per_epoch
+        else:
+            t_cur = self.current_epoch * self.steps_per_epoch + self.current_iterate
+            t_max = self.total_epochs * self.steps_per_epoch
+
+        thresh = self.min_threshold + 0.5 * \
+            (self.start_threshold - self.min_threshold) * \
+            (1 + np.cos(np.pi * t_cur / t_max))
+
+        return thresh
+
     def forward(self, text_inputs, img_inputs):
-        text_thresh = self.get_threshold()
+        text_thresh = self.get_threshold_linear()
         text_f = self.text_encoder(
             text_inputs, text_thresh)
         img_f = self.img_encoder(img_inputs)
@@ -151,5 +193,6 @@ class ViVQAModel(nn.Module):
 
         return logits
 
-    def update_epoch(self, epoch):
+    def update_epoch(self, epoch, iterate):
         self.current_epoch = epoch
+        self.current_iterate = iterate
