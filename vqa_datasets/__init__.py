@@ -31,7 +31,6 @@ def get_dataset(text_encoder_dict,
         return dataset_class(
             data_mode='train',
             is_text_augment=kwargs['is_text_augment'],
-            is_filter = kwargs['is_filter'],
             n_text_paras=kwargs['n_text_paras'],
             text_para_thresh=kwargs['text_para_thresh'],
             n_para_pool=kwargs['n_text_para_pool'],

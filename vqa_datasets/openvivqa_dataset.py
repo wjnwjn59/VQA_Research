@@ -11,7 +11,7 @@ device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 class OpenViVQADataset(Dataset):
     def __init__(self, data_dir, data_mode, text_encoder_dict, img_encoder_dict,
-                 label_encoder=None, is_text_augment=True, is_filter=False,
+                 label_encoder=None, is_text_augment=True,
                  n_text_paras=2, text_para_thresh=0.5, n_para_pool=20
                  ):
         self.data_dir = data_dir
@@ -20,14 +20,10 @@ class OpenViVQADataset(Dataset):
         self.is_text_augment = is_text_augment
         self.n_text_paras = n_text_paras
         self.text_para_thresh = text_para_thresh
-        self.is_filter = is_filter
 
         if self.data_mode == 'train':
-            if self.is_filter:
-                train_filename = f'vlsp2023_train_data_filter_{n_para_pool}_paraphrases.json'
-            else: 
-                train_filename = f'vlsp2023_train_data_{n_para_pool}_paraphrases.json'
-                data_path = os.path.join(data_dir, 'OpenViVQA', train_filename)
+            train_filename = f'vlsp2023_train_data_{n_para_pool}_paraphrases.json'
+            data_path = os.path.join(data_dir, 'OpenViVQA', train_filename)
                 
             if not os.path.exists(data_path):
                 print(
