@@ -64,24 +64,30 @@ class TextEncoder(nn.Module):
 
         return x
 
-
 class ImageEncoder(nn.Module):
-    def __init__(self, img_model, projection_dim):
+    def __init__(self, img_model, features_dim, projection_dim, model_type):
         super().__init__()
 
         for param in img_model.parameters():
             param.requires_grad = True
 
         self.model = img_model
+        self.model_type = model_type
 
+        # Projection layer
         self.proj = nn.Sequential(
-            nn.Linear(self.model.num_features * 7 * 7, projection_dim),
+            nn.Linear(features_dim, projection_dim),  
             nn.ReLU()
         )
 
     def forward(self, img_inputs_lst):
         x = self.model.forward_features(img_inputs_lst[0])
-        x = x.view(x.size(0), -1)
+
+        if 'resnet' in self.model_type:
+            x = x.view(x.size(0), -1) 
+        elif 'beit' in self.model_type:
+            x = x[:, 0, :]  
+
         x = self.proj(x)
         return x
 
@@ -117,7 +123,9 @@ class ViVQAModel(nn.Module):
                                         is_text_augment=is_text_augment)
 
         self.img_encoder = ImageEncoder(img_model=img_encoder_dict['img_model'],
-                                        projection_dim=projection_dim)
+                                        features_dim=img_encoder_dict['features_dim'],
+                                        projection_dim=projection_dim,
+                                        model_type=img_encoder_dict['model_name'])
 
         self.classifier = Classifier(projection_dim=projection_dim,
                                      hidden_dim=hidden_dim,

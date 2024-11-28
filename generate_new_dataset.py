@@ -1,4 +1,5 @@
-from vqa_datasets.augmentations.paraphraser import get_paraphrase, knn_filter, sbert_filter
+from vqa_datasets.augmentations.paraphraser import get_paraphrase
+from vqa_datasets.augmentations.paraphraser import knn_filter, sbert_filter
 import ast
 from tqdm import tqdm
 import torch
@@ -107,22 +108,26 @@ def main():
 
     set_seed(random_seed)
 
-    if '.csv' in train_filepath:
-        paraphrase_df = generate_df_w_filter_paraphrases(data_filepath=train_filepath,
-                                                         is_paraphrased=is_paraphrased,
-                                                         num_paraphrase=num_params,
-                                                         filter_method=filter_method,
-                                                         from_index=from_index,
-                                                         topk=topk)
+    # if '.csv' in train_filepath:
+    #     paraphrase_df = generate_df_w_filter_paraphrases(data_filepath=train_filepath,
+    #                                                      is_paraphrased=is_paraphrased,
+    #                                                      num_paraphrase=num_params,
+    #                                                      filter_method=filter_method,
+    #                                                      from_index=from_index,
+    #                                                      topk=topk)
 
-        if save_filepath:
-            paraphrase_df.to_csv(save_filepath, index=False)
-            print(f'Results saved to {save_filepath}')
+    #     if save_filepath:
+    #         paraphrase_df.to_csv(save_filepath, index=False)
+    #         print(f'Results saved to {save_filepath}')
 
-    else:
-        generate_json_w_paraphrases(data_filepath=train_filepath,
-                                    num_paraphrase=num_params,
-                                    output_filepath=save_filepath)
+    # else:
+    #     generate_json_w_paraphrases(data_filepath=train_filepath,
+    #                                 num_paraphrase=num_params,
+    #                                 output_filepath=save_filepath)
+
+    generate_json_w_paraphrases(data_filepath=train_filepath,
+                                num_paraphrase=num_params,
+                                output_filepath=save_filepath)
 
     print('Paraphrases generation completed!')
 

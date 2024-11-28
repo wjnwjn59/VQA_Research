@@ -68,7 +68,8 @@ def train(model,
           use_amp=True):
 
     best_val_loss = np.inf
-    acc_best_val_loss = 0
+    best_val_cider = 0
+    best_val_results = None
 
     epochs_no_improve = 0
 
@@ -97,11 +98,12 @@ def train(model,
             text_inputs_lst = batch.pop('text_inputs_lst')
             img_inputs_lst = batch.pop('img_inputs')
             labels = batch.pop('labels')
-
+            
             text_inputs_lst = [
-                {k: v.squeeze().to(device, non_blocking=True)
-                 for k, v in input_ids.items()}
+                {k: v.squeeze(1).to(device, non_blocking=True)
+                    for k, v in input_ids.items()}
                 for input_ids in text_inputs_lst]
+                
             img_inputs_lst = [inputs.to(device, non_blocking=True)
                               for inputs in img_inputs_lst]
             labels = labels.to(device, non_blocking=True)
@@ -136,11 +138,14 @@ def train(model,
             epoch_iterator.set_postfix(
                 {'Batch Loss': loss.item()})
 
-        val_loss, val_acc, val_cider = evaluate(model=model,
-                                                val_loader=val_loader,
-                                                criterion=criterion,
-                                                idx2label=idx2label,
-                                                dataset_name=dataset_name)
+        val_results = evaluate(model=model,
+                               val_loader=val_loader,
+                               criterion=criterion,
+                               idx2label=idx2label,
+                               dataset_name=dataset_name)
+        val_loss = val_results['val_loss']
+        val_acc = val_results['val_acc']
+        val_cider = val_results['val_cider']
 
         train_loss = total_loss / total_samples
 
@@ -169,24 +174,31 @@ def train(model,
             'train_loss': train_loss,
             'train_acc': train_acc,
             'train_cider': train_cider,
-            'val_loss': val_loss,
-            'val_acc': val_acc,
-            'val_cider': val_cider
+            'val_results': val_results
         }
         wandb.log(log_data)
 
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            acc_best_val_loss = val_acc
-            epochs_no_improve = 0
-        else:
-            epochs_no_improve += 1
-            if epochs_no_improve >= patience:
-                print(
-                    f'Early stopping triggered after {epochs_no_improve} epochs without improvement.')
-                break
+        if patience > 0:
+            if (dataset_name == 'vivqa' and val_loss < best_val_loss) or (dataset_name == 'openvivqa' and val_cider > best_val_cider):
+                best_val_loss = val_loss
+                best_val_cider = val_cider
+                best_val_results = val_results
+                epochs_no_improve = 0
+            else:
+                epochs_no_improve += 1
+                if epochs_no_improve >= patience:
+                    print(f'Early stopping triggered after {epochs_no_improve} epochs without improvement.')
+                    break
 
-    return train_loss_lst, train_acc_lst, train_cider_lst, val_loss_lst, val_acc_lst, val_cider_lst, acc_best_val_loss, best_val_loss
+    return {
+        'train_loss_lst': train_loss_lst, 
+        'train_acc_lst': train_acc_lst, 
+        'train_cider_lst': train_cider_lst, 
+        'val_loss_lst': val_loss_lst, 
+        'val_acc_lst': val_acc_lst, 
+        'val_cider_lst': val_cider_lst, 
+        'best_val_results': best_val_results
+    }
 
 
 def parse_args():
@@ -276,8 +288,7 @@ def main():
                        use_dynamic_thresh=args.use_dynamic_thresh,
                        start_threshold=args.start_threshold,
                        min_threshold=args.min_threshold,
-                       text_para_thresh=args.text_para_thresh
-                       )
+                       text_para_thresh=args.text_para_thresh)
 
     model = torch.compile(model, mode='default')
     model = model.to(device)
@@ -304,8 +315,6 @@ def main():
     train_loader = DataLoader(train_dataset,
                               batch_size=args.train_batch_size,
                               pin_memory=True,
-
-
                               shuffle=True)
 
     test_loader = DataLoader(test_dataset,
@@ -314,7 +323,7 @@ def main():
                              shuffle=False)
 
     if not args.exp_name:
-        exp_name = f'CrossAttention_DefaultConfig'
+        exp_name = f'phobert_beitv2_seed_{args.seed}_{args.dataset_name}_augmented:{args.is_text_augment}_cl:{args.use_dynamic_thresh}'
     else:
         exp_name = args.exp_name
 
@@ -329,19 +338,19 @@ def main():
     os.makedirs(weights_dirname, exist_ok=True)
     save_best_path = f'./{weights_dirname}/{exp_name}_best.pt'
 
-    train_loss_lst, train_acc_lst, train_cider_lst, val_loss_lst, val_acc_lst, val_cider_lst, best_val_acc, loss_best_val_acc = train(model,
-                                                                                                                                      train_loader,
-                                                                                                                                      test_loader,
-                                                                                                                                      epochs=args.epochs,
-                                                                                                                                      criterion=criterion,
-                                                                                                                                      optimizer=optimizer,
-                                                                                                                                      scaler=scaler,
-                                                                                                                                      dataset_name=args.dataset_name,
-                                                                                                                                      idx2label=idx2label,
-                                                                                                                                      patience=args.patience,
-                                                                                                                                      save_best_path=save_best_path,
-                                                                                                                                      is_log_result=args.is_log_result,
-                                                                                                                                      use_amp=args.use_amp)
+    training_results = train(model,
+                            train_loader,
+                            test_loader,
+                            epochs=args.epochs,
+                            criterion=criterion,
+                            optimizer=optimizer,
+                            scaler=scaler,
+                            dataset_name=args.dataset_name,
+                            idx2label=idx2label,
+                            patience=args.patience,
+                            save_best_path=save_best_path,
+                            is_log_result=args.is_log_result,
+                            use_amp=args.use_amp)
 
     free_vram(model, optimizer, scaler)
 
@@ -349,8 +358,10 @@ def main():
 
     exp_table = wandb.Table(
         columns=list(args_dict.keys()) +
-        ['test_loss', 'test_acc'],
-        data=[list(args_dict.values()) + [loss_best_val_acc, best_val_acc]]
+        list(training_results['best_val_results'].keys()),
+        data=[
+            list(args_dict.values()) + list(training_results['best_val_results'].values())
+        ]
     )
     wandb.log({"Exp_table": exp_table})
 

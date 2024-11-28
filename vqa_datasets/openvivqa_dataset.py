@@ -27,7 +27,8 @@ class OpenViVQADataset(Dataset):
                 train_filename = f'vlsp2023_train_data_filter_{n_para_pool}_paraphrases.json'
             else: 
                 train_filename = f'vlsp2023_train_data_{n_para_pool}_paraphrases.json'
-                data_path = os.path.join(data_dir, 'OpenViVQA', train_filename)
+                
+            data_path = os.path.join(data_dir, 'OpenViVQA', train_filename)
                 
             if not os.path.exists(data_path):
                 print(

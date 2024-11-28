@@ -1,6 +1,9 @@
 import torch
 
 from pycocoevalcap.cider.cider import Cider
+from pycocoevalcap.bleu.bleu import Bleu
+from pycocoevalcap.meteor.meteor import Meteor
+from pycocoevalcap.rouge.rouge import Rouge
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -83,7 +86,39 @@ def evaluate(model, val_loader, criterion, idx2label, dataset_name):
 
     if dataset_name == 'openvivqa':
         eval_cider = compute_cider(all_predictions, all_references)
-        return eval_loss, -1, eval_cider
+        
+        bleu_scorer = Bleu(4)
+        meteor_scorer = Meteor()
+        rouge_scorer = Rouge()
+
+        references_dict = {idx: [text] for idx, text in enumerate(all_references)}
+        predictions_dict = {idx: [text] for idx, text in enumerate(all_predictions)}
+
+        eval_bleu, _ = bleu_scorer.compute_score(references_dict, predictions_dict)
+        eval_meteor, _ = meteor_scorer.compute_score(references_dict, predictions_dict)
+        eval_rouge, _ = rouge_scorer.compute_score(references_dict, predictions_dict)
+
+        return {
+            'val_loss': eval_loss,
+            'val_acc': -1,
+            'val_cider': eval_cider,
+            'val_bleu_1': eval_bleu[0],
+            'val_bleu_2': eval_bleu[1],
+            'val_bleu_3': eval_bleu[2],
+            'val_bleu_4': eval_bleu[3],
+            'val_meteor': eval_meteor,
+            'val_rouge': eval_rouge
+        }
     else:
         eval_acc = compute_accuracy(total_correct, total_samples)
-        return eval_loss, eval_acc, -1
+        return {
+            'val_loss': eval_loss,
+            'val_acc': eval_acc,
+            'val_cider': -1,
+            'val_bleu_1': -1,
+            'val_bleu_2': -1,
+            'val_bleu_3': -1,
+            'val_bleu_4': -1,
+            'val_meteor': -1,
+            'val_rouge': -1
+        }

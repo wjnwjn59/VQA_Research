@@ -24,7 +24,7 @@ python download.py
 ## Scripts
 ```bash
 python3 train.py --seed 59 --is_text_augment False --is_img_augment False --use_dynamic_thresh False
-python3 train.py --seed 60 --dataset_name openvivqa --is_text_augment True --n_text_paras 1 --n_text_para_pool 30 --text_para_thresh 0.6 --is_img_augment False
+python3 train.py --seed 59 --dataset_name openvivqa --is_text_augment True --n_text_paras 1 --n_text_para_pool 20 --text_para_thresh 0.6 --use_dynamic_thresh False
 python3 train.py --seed 59 --is_text_augment True --n_text_paras 1 --n_text_para_pool 30 --text_para_thresh 0.6 --is_img_augment False --use_dynamic_thresh False
 python3 train.py --seed 59 --is_img_augment True --n_img_augments 1 --img_augment_thresh 0.2 --is_text_augment False  --use_dynamic_thresh False
 python3 train.py --seed 59 --use_dynamic_thresh True --is_text_augment True --n_text_paras 1 --n_text_para_pool 30 --n_text_para_pool 30 --text_para_thresh 0.6  --is_img_augment False
