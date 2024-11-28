@@ -81,8 +81,6 @@ def train(model,
     val_cider_lst = []
 
     for epoch in range(epochs):
-        model.update_epoch(epoch)
-
         total_correct = 0
         total_loss = 0
         total_samples = 0
@@ -94,7 +92,8 @@ def train(model,
                               unit='batch')
 
         model.train()
-        for batch in epoch_iterator:
+        for batch_idx, batch in enumerate(epoch_iterator):
+            model.update_epoch(epoch, batch_idx)
             text_inputs_lst = batch.pop('text_inputs_lst')
             img_inputs_lst = batch.pop('img_inputs')
             labels = batch.pop('labels')
@@ -138,6 +137,7 @@ def train(model,
             epoch_iterator.set_postfix(
                 {'Batch Loss': loss.item()})
 
+<<<<<<< HEAD
         val_results = evaluate(model=model,
                                val_loader=val_loader,
                                criterion=criterion,
@@ -146,6 +146,15 @@ def train(model,
         val_loss = val_results['val_loss']
         val_acc = val_results['val_acc']
         val_cider = val_results['val_cider']
+=======
+        print(model.get_threshold_cosine())
+
+        val_loss, val_acc, val_cider = evaluate(model=model,
+                                                val_loader=val_loader,
+                                                criterion=criterion,
+                                                idx2label=idx2label,
+                                                dataset_name=dataset_name)
+>>>>>>> a4f0ad4082c60340b6e1bd50bafc5744656b154a
 
         train_loss = total_loss / total_samples
 
@@ -241,14 +250,16 @@ def parse_args():
                         default=pipeline_config.text_para_thresh, help='Paraphrase threshold')
     parser.add_argument('--n_text_para_pool', type=int, default=pipeline_config.n_text_para_pool,
                         help='The number of paraphrase in the paraphrase pool')
-    parser.add_argument('--is_filter', type=lambda x: (str(x).lower() == 'true'),
-                        default=pipeline_config.is_filter, help='Filtered paraphrases')
     parser.add_argument('--use_dynamic_thresh', type=lambda x: (str(x).lower() == 'true'),
                         default=pipeline_config.use_dynamic_thresh, help='Use dynamic threshold scaled by epochs')
     parser.add_argument('--start_threshold', type=float,
                         default=pipeline_config.start_threshold, help='Start dynamic threshold value')
     parser.add_argument('--min_threshold', type=float,
                         default=pipeline_config.min_threshold, help='Min threshold value')
+    parser.add_argument('--restart_threshold', type=lambda x: (str(x).lower() == 'true'),
+                        default=pipeline_config.restart_threshold, help='Is dynamic threshold has a restart interval')
+    parser.add_argument('--restart_epoch', type=int,
+                        default=pipeline_config.restart_epoch, help='Amount of epoch to restart')
     parser.add_argument('--save_ckpt_dir', type=str,
                         default='runs/train', help='Directory to save checkpoints')
     parser.add_argument('--is_log_result', type=lambda x: (str(x).lower() ==
@@ -261,7 +272,6 @@ def parse_args():
 
 def main():
     args = parse_args()
-    print(args.is_filter)
     set_seed(args.seed)
     set_threads(4)
 
@@ -278,6 +288,7 @@ def main():
     label2idx, idx2label, answer_space_len = get_label_encoder(data_dir=args.data_dir,
                                                                dataset_name=args.dataset_name)
 
+<<<<<<< HEAD
     model = ViVQAModel(projection_dim=args.projection_dim,
                        hidden_dim=args.hidden_dim,
                        answer_space_len=answer_space_len,
@@ -300,6 +311,8 @@ def main():
     criterion = nn.CrossEntropyLoss()
     scaler = torch.amp.GradScaler(enabled=args.use_amp)
 
+=======
+>>>>>>> a4f0ad4082c60340b6e1bd50bafc5744656b154a
     train_dataset = get_dataset(text_encoder_dict=text_encoder_dict,
                                 img_encoder_dict=img_encoder_dict,
                                 label_encoder=label2idx,
@@ -321,6 +334,32 @@ def main():
                              batch_size=args.test_batch_size,
                              pin_memory=True,
                              shuffle=False)
+
+    model = ViVQAModel(projection_dim=args.projection_dim,
+                       hidden_dim=args.hidden_dim,
+                       answer_space_len=answer_space_len,
+                       text_encoder_dict=text_encoder_dict,
+                       img_encoder_dict=img_encoder_dict,
+                       is_text_augment=args.is_text_augment,
+                       total_epochs=args.epochs,
+                       use_dynamic_thresh=args.use_dynamic_thresh,
+                       start_threshold=args.start_threshold,
+                       min_threshold=args.min_threshold,
+                       text_para_thresh=args.text_para_thresh,
+                       steps_per_epoch=len(train_loader),
+                       restart_threshold=args.restart_threshold,
+                       restart_epoch=args.restart_epoch
+                       )
+
+    model = torch.compile(model, mode='default')
+    model = model.to(device)
+
+    optimizer = torch.optim.AdamW(model.parameters(),
+                                  lr=args.learning_rate,
+                                  weight_decay=args.weight_decay)
+
+    criterion = nn.CrossEntropyLoss()
+    scaler = torch.amp.GradScaler(enabled=args.use_amp)
 
     if not args.exp_name:
         exp_name = f'phobert_beitv2_seed_{args.seed}_{args.dataset_name}_augmented:{args.is_text_augment}_cl:{args.use_dynamic_thresh}'

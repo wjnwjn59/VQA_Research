@@ -18,10 +18,11 @@ class PipelineConfig:
         self.n_text_paras = 2
         self.text_para_thresh = 0.8
         self.n_text_para_pool = 30
-        self.start_threshold = 1.0
-        self.min_threshold = 0.8
-        self.is_filter = True
+        self.start_threshold = 0.8
+        self.min_threshold = 0.0
         self.use_dynamic_thresh = False
+        self.restart_threshold = False
+        self.restart_epoch = 0
         self.dataset_name = 'vivqa'
         self.data_dir = "/home/VLAI/datasets"
         self.use_amp = True
