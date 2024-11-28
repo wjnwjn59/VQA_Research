@@ -1,5 +1,5 @@
-from vqa_datasets.augmentations.paraphraser import get_paraphrase
-from vqa_datasets.augmentations.paraphraser import knn_filter, sbert_filter
+from vqa_datasets.augmentations import mt5_paraphraser
+from config import pipeline_config
 import ast
 from tqdm import tqdm
 import torch

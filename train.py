@@ -278,25 +278,6 @@ def main():
     label2idx, idx2label, answer_space_len = get_label_encoder(data_dir=args.data_dir,
                                                                dataset_name=args.dataset_name)
 
-    model = ViVQAModel(projection_dim=args.projection_dim,
-                       hidden_dim=args.hidden_dim,
-                       answer_space_len=answer_space_len,
-                       text_encoder_dict=text_encoder_dict,
-                       img_encoder_dict=img_encoder_dict,
-                       is_text_augment=args.is_text_augment,
-                       total_epochs=args.epochs,
-                       use_dynamic_thresh=args.use_dynamic_thresh,
-                       start_threshold=args.start_threshold,
-                       min_threshold=args.min_threshold,
-                       text_para_thresh=args.text_para_thresh)
-
-    model = torch.compile(model, mode='default')
-    model = model.to(device)
-
-    optimizer = torch.optim.AdamW(model.parameters(),
-                                  lr=args.learning_rate,
-                                  weight_decay=args.weight_decay)
-
     criterion = nn.CrossEntropyLoss()
     scaler = torch.amp.GradScaler(enabled=args.use_amp)
 
@@ -335,8 +316,7 @@ def main():
                        text_para_thresh=args.text_para_thresh,
                        steps_per_epoch=len(train_loader),
                        restart_threshold=args.restart_threshold,
-                       restart_epoch=args.restart_epoch
-                       )
+                       restart_epoch=args.restart_epoch)
 
     model = torch.compile(model, mode='default')
     model = model.to(device)
@@ -349,7 +329,7 @@ def main():
     scaler = torch.amp.GradScaler(enabled=args.use_amp)
 
     if not args.exp_name:
-        exp_name = f'phobert_beitv2_seed_{args.seed}_{args.dataset_name}_augmented:{args.is_text_augment}_cl:{args.use_dynamic_thresh}'
+        exp_name = f'beitv2_seed_{args.seed}_{args.dataset_name}_augmented:{args.is_text_augment}_cl:{args.use_dynamic_thresh}'
     else:
         exp_name = args.exp_name
 

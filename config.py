@@ -11,7 +11,7 @@ class PipelineConfig:
         self.patience = 3
         self.text_max_len = 50
         self.fusion_strategy = "concat+smalllen"
-        self.text_encoder_id = "vinai/phobert-base-v2" # vinai/phobert-base-v2 # vinai/bartpho-word
+        self.text_encoder_id = "vinai/bartpho-word" # vinai/phobert-base-v2 # vinai/bartpho-word
         self.img_encoder_id = "timm/beitv2_base_patch16_224.in1k_ft_in22k" # timm/beitv2_base_patch16_224.in1k_ft_in22k # timm/resnet18.a1_in1k
         self.paraphraser_id = "chieunq/vietnamese-sentence-paraphase"
         self.is_text_augment = True
