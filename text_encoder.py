@@ -128,13 +128,3 @@ def load_text_encoder(text_model_id):
         'features_dim': text_model.config.hidden_size,
         'text_model': text_model
     }
-
-
-if __name__ == "__main__":
-    text_model_id = "vinai/bartpho-word"  # Replace with your model ID
-    text_encoder = load_text_encoder(text_model_id)
-
-    sample_text = "Xin chào, đây là một ví dụ về văn bản."  # Replace with your text input
-    processed_input = text_encoder['text_processor'](sample_text)
-
-    print("Processed input shape:", processed_input['input_ids'].shape)
