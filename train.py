@@ -137,7 +137,6 @@ def train(model,
             epoch_iterator.set_postfix(
                 {'Batch Loss': loss.item()})
 
-<<<<<<< HEAD
         val_results = evaluate(model=model,
                                val_loader=val_loader,
                                criterion=criterion,
@@ -146,15 +145,6 @@ def train(model,
         val_loss = val_results['val_loss']
         val_acc = val_results['val_acc']
         val_cider = val_results['val_cider']
-=======
-        print(model.get_threshold_cosine())
-
-        val_loss, val_acc, val_cider = evaluate(model=model,
-                                                val_loader=val_loader,
-                                                criterion=criterion,
-                                                idx2label=idx2label,
-                                                dataset_name=dataset_name)
->>>>>>> a4f0ad4082c60340b6e1bd50bafc5744656b154a
 
         train_loss = total_loss / total_samples
 
@@ -288,7 +278,6 @@ def main():
     label2idx, idx2label, answer_space_len = get_label_encoder(data_dir=args.data_dir,
                                                                dataset_name=args.dataset_name)
 
-<<<<<<< HEAD
     model = ViVQAModel(projection_dim=args.projection_dim,
                        hidden_dim=args.hidden_dim,
                        answer_space_len=answer_space_len,
@@ -311,8 +300,6 @@ def main():
     criterion = nn.CrossEntropyLoss()
     scaler = torch.amp.GradScaler(enabled=args.use_amp)
 
-=======
->>>>>>> a4f0ad4082c60340b6e1bd50bafc5744656b154a
     train_dataset = get_dataset(text_encoder_dict=text_encoder_dict,
                                 img_encoder_dict=img_encoder_dict,
                                 label_encoder=label2idx,
